@@ -276,3 +276,10 @@ body.jobmode #btnMenu, body.jobmode #btnTasks { visibility: hidden; }
 .pile-pin.done { background: #2e7d32; }
 .pile-pin.focus { outline: 3px solid #e8710a; }
 #pDate { margin-left: 8px; }
+/* CLAUDE-1278: vognmandskortets rute */
+.route-arrow { color: #1565c0; font-size: 12px; line-height: 14px; text-align: center; text-shadow: 0 0 2px #fff, 0 0 2px #fff; }
+.route-stop { width: 24px; height: 24px; border-radius: 50%; background: #1565c0; color: #fff; font-weight: 700; font-size: 12px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; box-sizing: border-box; }
+.route-stop.turn { background: #6a1b9a; }
+.route-stop.entry { background: #e8710a; width: 28px; height: 28px; font-size: 16px; }
+.route-stop.focus { outline: 3px solid #e8710a; }
+.route-no { display: inline-block; min-width: 20px; padding: 0 5px; border-radius: 10px; background: #1565c0; color: #fff; font-size: 12px; text-align: center; }

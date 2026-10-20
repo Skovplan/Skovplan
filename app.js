@@ -2133,10 +2133,40 @@ async function openPickup(token, db64, regId) {
   catch (e) { if (!pick.card) { openSheet(`<div class="head"><h3>Afhentning</h3></div><p>${esc(/Failed to fetch/.test(e.message) ? "Ingen forbindelse. Prøv igen, når der er net." : e.message)}</p>`); return; } }
   drawPickup(true);
 }
+/* Vognmandskortets planlagte rute (CLAUDE-1278): linje med pile, nummererede stop, V = vendeplads, indkørsel. */
+function bearing(a, b) { const r = Math.PI / 180, y = Math.sin((b[1] - a[1]) * r) * Math.cos(b[0] * r),
+  x = Math.cos(a[0] * r) * Math.sin(b[0] * r) - Math.sin(a[0] * r) * Math.cos(b[0] * r) * Math.cos((b[1] - a[1]) * r); return Math.atan2(y, x) / r; }
+function drawRoute(layer, rute, focusStop) {
+  const line = (rute.linje || []).filter(p => Array.isArray(p) && p.length >= 2);
+  if (line.length > 1) {
+    L.polyline(line, { color: "#fff", weight: 8, opacity: 0.8 }).addTo(layer);
+    L.polyline(line, { color: "#1565c0", weight: 4.5 }).addTo(layer);
+    let acc = 0;   // en pil ca. hver 120 m
+    for (let i = 1; i < line.length; i++) {
+      acc += map.distance(line[i - 1], line[i]);
+      if (acc < 120) continue; acc = 0;
+      L.marker(line[i], { interactive: false, icon: L.divIcon({ className: "", html: `<div class="route-arrow" style="transform:rotate(${bearing(line[i - 1], line[i])}deg)">▲</div>`, iconSize: [14, 14], iconAnchor: [7, 7] }) }).addTo(layer);
+    }
+  }
+  const ind = rute.indkoersel;
+  if (ind && ind.lat != null) L.marker([ind.lat, ind.lon], { icon: L.divIcon({ className: "", html: '<div class="route-stop entry">⇥</div>', iconSize: [28, 28], iconAnchor: [14, 14] }) })
+    .bindTooltip("Indkørsel" + (ind.navn ? ": " + esc(ind.navn) : "")).addTo(layer);
+  for (const st of rute.stop || []) {
+    if (st.lat == null) continue;
+    const turn = st.type === "vendeplads";
+    L.marker([st.lat, st.lon], { zIndexOffset: 500, icon: L.divIcon({ className: "", html: `<div class="route-stop${turn ? " turn" : ""}${st === focusStop ? " focus" : ""}">${esc(turn ? "V" : st.nr)}</div>`, iconSize: [24, 24], iconAnchor: [12, 30] }) })
+      .bindTooltip((turn ? "Vendeplads" : "Stop " + esc(st.nr)) + (st.navn ? ": " + esc(st.navn) : "")).addTo(layer);
+  }
+  return line;
+}
+const routeStop = regId => (pick.card.rute?.stop || []).find(st => (st.stakke || []).includes(regId));
+const km = m => m >= 1000 ? `${(m / 1000).toFixed(1).replace(".", ",")} km` : `${Math.round(m)} m`;
 function drawPickupMap(fit) {
   if (pickLayer) map.removeLayer(pickLayer);
   pickLayer = L.layerGroup().addTo(map);
   const pts = [];
+  const line = pick.card.rute ? drawRoute(pickLayer, pick.card.rute, pick.focus ? routeStop(pick.focus) : null) : [];
+  pts.push(...line);
   for (const p of pick.card.stakke || []) {
     if (p.lat == null || p.lon == null) continue;
     const done = pileState(p.reg_id);
@@ -2145,35 +2175,37 @@ function drawPickupMap(fit) {
     pts.push([p.lat, p.lon]);
   }
   if (fit && pts.length) {
-    const f = (pick.card.stakke || []).find(p => p.reg_id === pick.focus && p.lat != null);
-    if (f) map.setView([f.lat, f.lon], 17); else map.fitBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: 17 });
+    const below = sheet.classList.contains("hidden") || sheet.classList.contains("full") ? 40 : Math.min(sheet.offsetHeight, innerHeight * 0.7) + 20;
+    const pad = { paddingTopLeft: [30, 40], paddingBottomRight: [30, below], maxZoom: 17 };
+    map.fitBounds(L.latLngBounds(pts), pad);
   }
 }
 function drawPickup(fit) {
   const c = pick.card;
-  if (pick.focus && (c.stakke || []).some(p => p.reg_id === pick.focus)) { drawPickupMap(fit); return drawPile(pick.focus); }
-  drawPickupMap(fit);
+  if (pick.focus && (c.stakke || []).some(p => p.reg_id === pick.focus)) return drawPile(pick.focus, fit);
   const piles = c.stakke || [], left = piles.filter(p => !pileState(p.reg_id)).length;
   const queued = pickQueue().filter(q => q.token === pick.token).length;
   openSheet(`<div class="head"><h3>${esc(c.titel || "Stakke til afhentning")}</h3><button class="close" id="pHide">Kort</button></div>
-    <p class="muted">${esc(c.ejendom || "")} · ${left ? `${left} af ${piles.length} stakke mangler` : "Alle stakke er hentet ✓"}</p>
+    <p class="muted">${esc(c.ejendom || "")} · ${left ? `${left} af ${piles.length} stakke mangler` : "Alle stakke er hentet ✓"}${c.rute?.laengde_m ? ` · Ruten: ${km(c.rute.laengde_m)}` : ""}</p>
+    ${c.rute?.indkoersel ? `<div class="actions"><a class="btn" href="https://www.google.com/maps/dir/?api=1&destination=${c.rute.indkoersel.lat},${c.rute.indkoersel.lon}" target="_blank" rel="noopener">➜ Kør til indkørslen</a></div>` : ""}
     ${c.besked ? `<div class="jnote">${esc(c.besked).replace(/\n/g, "<br>")}</div>` : ""}
     ${queued ? `<p class="warn">${queued} melding${queued === 1 ? "" : "er"} sendes, når der er net.</p>` : ""}
-    <ul class="list piles">${piles.map(p => { const d = pileState(p.reg_id); return `<li data-pile="${esc(p.reg_id)}"><div class="grow"><b>${pileName(p)}</b><br>
+    <ul class="list piles">${piles.map(p => { const d = pileState(p.reg_id); const st = c.rute ? routeStop(p.reg_id) : null; return `<li data-pile="${esc(p.reg_id)}"><div class="grow"><b>${st ? `<span class="route-no">${esc(st.nr)}</span> ` : ""}${pileName(p)}</b>${st && st.m ? ` <span class="muted small">+${km(st.m)}${st.via && st.via !== "vej" ? " (" + esc(st.via) + ")" : ""}</span>` : ""}<br>
       <span class="muted small">${pileAmount(p)}${p.koeber ? " · " + esc(p.koeber) : ""}${p.ordre ? " · ordre " + esc(p.ordre) : ""}</span></div>
       ${d ? `<span class="stchip st-done">Hentet ${fmtDate(d.dato)}</span>` : '<span class="stchip st-open">Mangler</span>'}</li>`; }).join("")}</ul>
-    <p class="muted small">Du er <b>${esc(myName() || "ikke navngivet")}</b> · <button class="linklike" id="pName">skift navn</button></p>`, true);
+    <p class="muted small">Du er <b>${esc(myName() || "ikke navngivet")}</b> · <button class="linklike" id="pName">skift navn</button></p>`, !c.rute);
   $("#pHide").onclick = e => { e.stopPropagation(); closeSheet(); pickChip(); };
   $("#pName").onclick = () => { askName(true); drawPickup(); };
   sheet.querySelector(".piles").onclick = e => { const li = e.target.closest("[data-pile]"); if (li) drawPile(li.dataset.pile); };
+  drawPickupMap(fit);
 }
 function pickChip() { const b = $("#jobChip"); b.textContent = "⛟ Vis stakkene"; b.classList.remove("hidden"); b.onclick = () => { b.classList.add("hidden"); b.textContent = "⚑ Vis opgaven"; drawPickup(); }; }
-function drawPile(regId) {
+function drawPile(regId, fit) {
   const p = (pick.card.stakke || []).find(x => x.reg_id === regId); if (!p) return drawPickup();
-  pick.focus = regId; drawPickupMap(false);
-  if (p.lat != null) map.panTo([p.lat, p.lon]);
+  pick.focus = regId;
   const d = pileState(regId), many = (pick.card.stakke || []).length > 1;
   openSheet(`<div class="head"><h3>${pileName(p)}</h3><button class="close" id="pBack">${many ? "Alle stakke" : "Kort"}</button></div>
+    ${(() => { const st = pick.card.rute ? routeStop(p.reg_id) : null; return st ? `<p class="small"><span class="route-no">${esc(st.nr)}</span> ${esc(st.navn || "Stop " + st.nr)}${st.m ? ` · ${km(st.m)} fra forrige${st.via && st.via !== "vej" ? " (" + esc(st.via) + ")" : ""}` : ""}</p>` : ""; })()}
     <p>${pileAmount(p) || ""}${p.koeber ? `<br>Køber: ${esc(p.koeber)}${p.ordre ? " · ordre " + esc(p.ordre) : ""}` : ""}<br><span class="muted small">${esc(pick.card.ejendom || "")}</span></p>
     ${p.lat != null ? `<div class="actions"><a class="btn" href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lon}" target="_blank" rel="noopener">➜ Kør hertil</a><button data-pgo>Vis vej i appen</button></div>` : ""}
     ${d ? `<div class="jnote">✓ Hentet ${fmtDate(d.dato)}${d.navn ? " af " + esc(d.navn) : ""}${d.note ? "<br>" + esc(d.note) : ""}${d.venter ? '<br><span class="muted small">Sendes, når der er net</span>' : ""}</div>
@@ -2182,8 +2214,15 @@ function drawPile(regId) {
         <textarea id="pNote" placeholder="Evt. note, fx læs nr., rest ligger tilbage …"></textarea>
         <button class="big" id="pPhoto">📷 Foto (valgfrit)</button><img id="pPrev" class="hidden tfoto" alt="">
         <input type="file" id="pFile" accept="image/*" capture="environment" class="hidden">
-        <div class="stack"><button class="primary big" id="pSend">✓ Meld stakken afhentet</button></div>`}`, true);
-  $("#pBack").onclick = e => { e.stopPropagation(); pick.focus = null; if (many) drawPickup(); else { closeSheet(); pickChip(); } };
+        <div class="stack"><button class="primary big" id="pSend">✓ Meld stakken afhentet</button></div>`}`, !pick.card.rute);
+  drawPickupMap(false);
+  if (p.lat != null) {   // stakken midt i det synlige kort over arket
+    const below = sheet.classList.contains("full") ? 0 : Math.min(sheet.offsetHeight, innerHeight * 0.7);
+    if (fit) map.setZoom(17, { animate: false });
+    const pt = map.project([p.lat, p.lon], map.getZoom()).add([0, below / 2]);
+    map.panTo(map.unproject(pt, map.getZoom()), { animate: !fit });
+  }
+  $("#pBack").onclick = e => { e.stopPropagation(); pick.focus = null; if (many) drawPickup(!!pick.card.rute); else { closeSheet(); pickChip(); } };
   sheet.querySelector("[data-pgo]")?.addEventListener("click", () => { closeSheet(); pickChip(); goTo(p.lat, p.lon, "Stak " + (p.nr || "")); });
   let photo = null;
   if (d) { $("#pUndo").onclick = () => sendPick(p, "fortryd", {}); return; }
