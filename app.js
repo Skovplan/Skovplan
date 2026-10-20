@@ -2098,7 +2098,7 @@ function jobList() {
   return true;
 }
 
-/* ---------- «Stak afhentet»: vognmandens link/QR fra vognmandskortet (CLAUDE-1245)
+/* ---------- «Stak afhentet»: vognmandens link/QR fra vognmandskortet (CLAUDE-1276)
    ?afhent=<kode>&db=<base64url {r, a}>[#stak=<reg_id>]. Koden giver kun adgang til kortets stakke. */
 const PICK_KEY = "afhentLinks", PICK_QUEUE = "afhentKoe";
 let pick = null, pickLayer = null;
@@ -2767,7 +2767,7 @@ async function updateMap(d, base, version) {
   if (linked || customer) history.replaceState(null, "", location.pathname);
   if (customer) chooseProperty(customer); else if (linked) downloadPackage(linked);
   if (params.get("opgave") && params.get("db")) openJob(params.get("opgave"), params.get("db"));   // CLAUDE-1211
-  else if (params.get("afhent") && params.get("db")) openPickup(params.get("afhent"), params.get("db"), hashPile());   // CLAUDE-1245
+  else if (params.get("afhent") && params.get("db")) openPickup(params.get("afhent"), params.get("db"), hashPile());   // CLAUDE-1276
   else if (!state.data && !linked && !customer) jobList();
   if (syncCfg()) { state.syncHash = safeLS("syncHash:" + syncCfg().noegle); scheduleSync(); }
   setTimeout(checkMapUpdates, 4000); setInterval(checkMapUpdates, 10 * 60 * 1000); setInterval(syncTasks, 2 * 60 * 1000);
