@@ -259,3 +259,15 @@ label.check input { width: auto; min-height: 0; }
 .sg-det button { min-height: 32px; padding: 4px 10px; margin-left: 6px; font-size: 14px; }
 .sg-det small { opacity: .8; }
 .sg-sum b { font-size: 26px; }
+/* CLAUDE-1211: entreprenør-opgaver */
+.stchip { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 10px; vertical-align: middle; }
+.st-open { background: #eef1ee; color: #444; } .st-run { background: #d8ecff; color: #0b4f8a; }
+.st-prob { background: #ffe1dc; color: #a12212; } .st-done { background: #dcf0e1; color: #1f5f3a; }
+.jnote { background: #f6f8f6; border-radius: 10px; padding: 10px 12px; margin: 6px 0 10px; line-height: 1.45; }
+a.btn { display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; min-height: 44px; color: var(--fg); text-decoration: none; background: #fff; }
+.jprob { border-color: #e0a090; color: #a12212; }
+ul.tlog li { align-items: flex-start; }
+img.tfoto { max-width: 100%; max-height: 220px; border-radius: 8px; margin-top: 6px; display: block; }
+#jobChip { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 950; background: #e8710a; color: #fff; border: 0; font-weight: 700; border-radius: 22px; padding: 10px 18px; box-shadow: 0 2px 10px rgba(0,0,0,.3); }
+#jobChip.hidden { display: none; }
+body.jobmode #btnMenu, body.jobmode #btnTasks { visibility: hidden; }
