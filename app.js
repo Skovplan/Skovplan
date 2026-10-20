@@ -2254,6 +2254,7 @@ function drawPickupMap(fit) {
 }
 function drawPickup(fit) {
   const c = pick.card;
+  if (pick.focus?.startsWith("idx:")) pick.focus = (c.stakke || [])[+pick.focus.slice(4) - 1]?.reg_id || null;
   if (pick.focus && (c.stakke || []).some(p => p.reg_id === pick.focus)) return drawPile(pick.focus, fit);
   const piles = c.stakke || [], left = piles.filter(p => !pileState(p.reg_id)).length;
   const queued = pickQueue().filter(q => q.token === pick.token).length;
@@ -2335,8 +2336,17 @@ async function flushPickQueue() {
   } finally { pickFlushing = false; }
 }
 window.addEventListener("online", () => { if (pick) flushPickQueue().then(() => drawPickup()); });
-function hashPile() { const m = /stak=([^&]+)/.exec(location.hash); try { return m ? decodeURIComponent(m[1]) : null; } catch (e) { return null; } }
-window.addEventListener("hashchange", () => { const r = hashPile(); if (pick && r) { pick.focus = r; drawPickup(true); } });
+function hashPile() {
+  const n = /[#&]s=(\d+)/.exec(location.hash); if (n) return "idx:" + n[1];   // CLAUDE-1282: kort QR-link, stakkens løbenummer på kortet
+  const m = /stak=([^&]+)/.exec(location.hash); try { return m ? decodeURIComponent(m[1]) : null; } catch (e) { return null; }
+}
+/* CLAUDE-1282: kort databaseangivelse k=<projekt>.<nøgle uden «sb_publishable_»> i stedet for db=<base64 JSON>, så QR-koden er lille. */
+function dbParam(params) {
+  if (params.get("db")) return params.get("db");
+  const k = /^([a-z0-9]{10,40})\.([A-Za-z0-9_-]{10,80})$/.exec(params.get("k") || "");
+  return k ? b64url(JSON.stringify({ r: `https://${k[1]}.supabase.co/rest/v1`, a: "sb_publishable_" + k[2] })) : null;
+}
+window.addEventListener("hashchange", () => { const r = hashPile(); if (pick?.card && r) { pick.focus = r; drawPickup(true); } });
 
 /* ------------------------------------------------------------------ online synkronisering
    Har feltpakken en «sync»-blok (Supabase), sendes registreringerne automatisk, når der er net:
@@ -2881,10 +2891,11 @@ async function updateMap(d, base, version) {
   let customer = null; try { customer = params.get("kunde") ? new URL(params.get("kunde")).href : null; } catch (e) { /* ugyldigt */ }
   if (linked || customer) history.replaceState(null, "", location.pathname);
   if (customer) chooseProperty(customer); else if (linked) downloadPackage(linked);
-  if (!role() && ((params.get("opgave") || params.get("afhent")) && params.get("db"))) safeLS("rolle", "entreprenor");   // CLAUDE-1280: kom via et opgavelink
+  const dbArg = dbParam(params);
+  if (!role() && ((params.get("opgave") || params.get("afhent")) && dbArg)) safeLS("rolle", "entreprenor");   // CLAUDE-1280: kom via et opgavelink
   askRole();
-  if (params.get("opgave") && params.get("db")) openJob(params.get("opgave"), params.get("db"));   // CLAUDE-1211
-  else if (params.get("afhent") && params.get("db")) openPickup(params.get("afhent"), params.get("db"), hashPile());   // CLAUDE-1276
+  if (params.get("opgave") && dbArg) openJob(params.get("opgave"), dbArg);   // CLAUDE-1211
+  else if (params.get("afhent") && dbArg) openPickup(params.get("afhent"), dbArg, hashPile());   // CLAUDE-1276
   else if (!state.data && !linked && !customer) jobList();
   if (syncCfg()) { state.syncHash = safeLS("syncHash:" + syncCfg().noegle); scheduleSync(); }
   setTimeout(checkMapUpdates, 4000); setInterval(checkMapUpdates, 10 * 60 * 1000); setInterval(syncTasks, 2 * 60 * 1000);
