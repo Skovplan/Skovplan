@@ -27,6 +27,7 @@
 </div>
 <div id="trackDot" class="hidden">● Optager rute</div>
 <button id="jobChip" class="hidden">⚑ Vis opgaven</button>
+<div id="quick" class="hidden"><button data-act="tasks" class="qside"><i>☑</i>Opgaver</button><button data-act="register" class="qmain"><i>＋</i>Registrér</button><button data-act="pileList" class="qside"><i>▤</i>Stakke</button></div>
 <div id="remind" class="hidden"><div class="grow" id="remindTxt"></div><button id="remindGo" class="primary">Mål her</button><button id="remindX" aria-label="Luk">✕</button></div>
 
 <div id="empty" class="overlay hidden">
@@ -46,20 +47,23 @@
 <section id="sheet" class="sheet hidden"></section>
 
 <nav id="menu" class="hidden">
-  <button data-act="welcome">Åbn feltpakke / skovkort</button>
-  <button data-act="install" id="btnInstall" class="hidden">📲 Installér som app på telefonen</button>
-  <button data-act="tasks">Opgaver</button>
-  <button data-act="pileList">Stakke og stokke (opmåling)</button>
-  <button data-act="track" id="btnTrack">● Optag ruten, jeg går</button>
-  <button data-act="generalNote">Ny generel note med billeder</button>
-  <button data-act="chooseProperty" id="btnChoose" class="hidden">Skift ejendom</button>
-  <button data-act="updatePackage" id="btnUpdatePkg" class="hidden">Hent nyeste feltpakke (online)</button>
-  <button data-act="listAll">Alle registreringer</button>
-  <button data-act="sync" id="btnSync" class="hidden">Send til SkovPlan nu (online)</button>
-  <button data-act="export">Eksportér til SkovPlan (fil)</button>
-  <button data-act="basemap">Skift baggrundskort</button>
-  <button data-act="layers">Vis lag (naturtyper, diger …)</button>
-  <button data-act="clearRegs" class="danger">Slet eksporterede registreringer</button>
+  <p class="mhead">I skoven</p>
+  <button data-act="tasks"><i>☑</i>Opgaver</button>
+  <button data-act="pileList"><i>▤</i>Stakke og stokke</button>
+  <button data-act="track" id="btnTrack"><i>●</i>Optag ruten, jeg går</button>
+  <button data-act="generalNote"><i>✎</i>Generel note med billeder</button>
+  <button data-act="listAll"><i>☰</i>Alle registreringer</button>
+  <p class="mhead">Kort</p>
+  <button data-act="basemap"><i>▧</i>Skift baggrundskort</button>
+  <button data-act="layers"><i>◫</i>Vis lag (naturtyper, diger …)</button>
+  <button data-act="chooseProperty" id="btnChoose" class="hidden"><i>⇄</i>Skift ejendom</button>
+  <p class="mhead">SkovPlan</p>
+  <button data-act="sync" id="btnSync" class="hidden"><i>⇅</i>Send til SkovPlan nu</button>
+  <button data-act="updatePackage" id="btnUpdatePkg" class="hidden"><i>⟳</i>Hent nyeste feltpakke</button>
+  <button data-act="export"><i>⇪</i>Eksportér til SkovPlan (fil)</button>
+  <button data-act="welcome"><i>⌂</i>Åbn feltpakke / skovkort</button>
+  <button data-act="install" id="btnInstall" class="hidden"><i>📲</i>Installér som app</button>
+  <button data-act="clearRegs" class="danger"><i>✕</i>Slet eksporterede registreringer</button>
   <p class="muted" id="menuInfo"></p>
 </nav>
 

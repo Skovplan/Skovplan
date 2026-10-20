@@ -422,6 +422,7 @@ function hsvHex(h, s, v) {
 const colorFor = art => { const k = normName(art); return k ? (COLOR_LOOKUP[k] || autoColors[k] || NO_SPECIES_COLOR) : NO_SPECIES_COLOR; };
 
 function drawData() {
+  setTimeout(updateQuick);
   state.overlays.forEach(l => map.removeLayer(l)); state.overlays = [];
   (state.extraLabels || []).forEach(t => t.remove()); state.extraLabels = [];
   if (!state.data) { state.standLayer = null; return; }
@@ -594,6 +595,34 @@ function standArea(key) {
     .reduce((s, f) => s + (num(f.properties.areal_ha) || 0), 0);
 }
 
+/* CLAUDE-1279: registreringer som fliser (litraets ark og «＋ Registrér» på kortet) */
+const SVG = d => `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const ICON = {
+  plot: SVG('<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 12l5.5-5.5"/>'),
+  relaskop: SVG('<path d="M4 20L12 4l8 16"/><path d="M7.5 13h9"/>'),
+  taks: SVG('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 4v16"/>'),
+  foto: SVG('<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>'),
+  note: SVG('<path d="M5 19l1-4L16 5l3 3L9 18z"/><path d="M14 7l3 3"/>'),
+  opgave: SVG('<path d="M6 21V4"/><path d="M6 4h11l-2 4 2 4H6"/>'),
+  stak: SVG('<circle cx="7" cy="16" r="3"/><circle cx="13" cy="16" r="3"/><circle cx="10" cy="10.5" r="3"/><circle cx="19" cy="16" r="3"/>'),
+  stok: SVG('<rect x="3" y="9" width="15" height="6" rx="1"/><ellipse cx="18" cy="12" rx="2.5" ry="3"/>'),
+  generel: SVG('<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 10h8M8 14h5"/>'),
+};
+const TILES = [
+  ["newPlot", ICON.plot, "Prøveflade", true], ["vinkel", ICON.relaskop, "Relaskop"], ["taksation", ICON.taks, "Taksér"],
+  ["photo", ICON.foto, "Foto"], ["note", ICON.note, "Note"], ["newTask", ICON.opgave, "Opgave"]];
+function regTiles(inStand) {
+  const extra = inStand ? [] : [["newStak", ICON.stak, "Stak"], ["newStok", ICON.stok, "Stok"], ["generalNote", ICON.generel, "Generel note"]];
+  return `<div class="tiles">${[...TILES, ...extra].map(([act, ic, lbl, main]) => `<button class="tile${main ? " main" : ""}" data-act="${act}"><i>${ic}</i>${lbl}</button>`).join("")}</div>`;
+}
+function registerSheet() {
+  const stand = currentStand();
+  if (stand) { const f = (state.data?.layers.skovafdelinger.features || []).find(x => standKey(x.properties) === stand.key); if (f) { state.selected = f; restyle(); } }
+  openSheet(`<div class="head"><h3>Registrér</h3><button class="close">Luk</button></div>
+    <p class="muted">${stand ? `I litra <b>${esc(stand.label)}</b>${state.selected ? "" : " (hvor du står)"}` : "Du står ikke i et litra. Tryk på et litra på kortet, eller vælg en generel note, stak eller stok."}</p>
+    ${regTiles(false)}`);
+}
+
 function selectStand(f) {
   state.selected = f; restyle();
   const p = f.properties, key = standKey(p), regs = state.regs.filter(r => r.stand?.key === key);
@@ -608,16 +637,9 @@ function selectStand(f) {
     </div>
     ${p.p3_status === "Ja" ? `<p class="p3">§3-beskyttet${p.p3_naturtyper ? ": " + esc(p.p3_naturtyper) : ""}</p>` : ""}
     ${p["bemærkning"] ? `<p class="muted">${esc(p["bemærkning"])}</p>` : ""}
-    <div class="actions">
-      <button class="primary" data-act="newPlot">+ Prøveflade</button>
-      <button data-act="photo">📷 Foto</button>
-      <button data-act="note">✎ Note</button>
-    </div>
-    <button class="big" data-act="vinkel">◔ Relaskopmåling</button>
-    <button class="big" data-act="taksation">Taksér litraet direkte (Hg, Dg, stamtal …)</button>
-    <button class="big" data-act="goStand">➜ Gå til ${esc(standLabel(p))}</button>
-    ${(() => { const ts = openTasks().filter(t => t.stand?.key === key); return `<div class="stand-tasks">${ts.map(t => `<button class="task-row" data-act="openTask" data-id="${esc(t.id)}">⚑ ${esc(t.title)}<span class="muted small">${t.assignee ? " · " + (sameName(t.assignee, myName()) ? "dig" : esc(t.assignee)) : ""}${t.due ? " · frist " + new Date(t.due + "T12:00").toLocaleDateString("da-DK", { day: "numeric", month: "short" }) : ""}</span></button>`).join("")}
-      <button data-act="newTask">+ Opgave i ${esc(standLabel(p))}</button></div>`; })()}
+    ${(() => { const ts = openTasks().filter(t => t.stand?.key === key); return ts.length ? `<div class="stand-tasks">${ts.map(t => `<button class="task-row" data-act="openTask" data-id="${esc(t.id)}">⚑ ${esc(t.title)}<span class="muted small">${t.assignee ? " · " + (sameName(t.assignee, myName()) ? "dig" : esc(t.assignee)) : ""}${t.due ? " · frist " + new Date(t.due + "T12:00").toLocaleDateString("da-DK", { day: "numeric", month: "short" }) : ""}</span></button>`).join("")}</div>` : ""; })()}
+    ${regTiles(true)}
+    <button class="big ghost" data-act="goStand">➜ Gå til ${esc(standLabel(p))}</button>
     ${s.spread && s.spread.n > 1 ? `<p class="muted small">Relaskop: ${s.spread.n} punkter, G ${fmt(s.spread.mean, 1)} m²/ha${s.spread.se !== null ? ` ± ${fmt(s.spread.se, 0)} % (middelfejl)` : ""}${s.spread.se > 10 ? ". Tag flere punkter for et sikrere tal." : ""}</p>` : ""}
     ${s.plots || s.points || s.Hg != null || s.Dg != null ? `<div class="result">${standResultHtml(s, p)}</div>` : ""}
     <ul class="list">${regs.filter(r => !r.data.parent).map(regItem).join("")}</ul>`);
@@ -2341,7 +2363,7 @@ const ACTIONS = {
   generalNote: () => newReg("note", true),
   goStand: () => { const f = state.selected; if (!f) return; const c = standTarget(f); closeSheet(); goTo(c.lat, c.lng, "Litra " + standLabel(f.properties)); },
   track: toggleTrack,
-  tasks: () => taskList(), newTask: () => taskForm(null),
+  tasks: () => taskList(), newTask: () => taskForm(null), register: registerSheet,
   openTask: el => { const t = (state.tasks || []).find(x => x.id === el.dataset.id); if (t) taskForm(t); },
   pileList: () => pileList(), newStak: () => newPile("stak"), newStok: () => newPile("stok"),
   packageLink: askPackageLink,
@@ -2362,6 +2384,10 @@ document.addEventListener("click", e => {
   if (!e.target.closest("#menu, #btnMenu")) $("#menu").classList.add("hidden");
 });
 $("#btnMenu").onclick = () => { refreshMenuInfo(); $("#menu").classList.toggle("hidden"); };
+/* CLAUDE-1279: «Opgaver · ＋ Registrér · Stakke» nederst, når intet ark er åbent */
+new MutationObserver(() => updateQuick()).observe(sheet, { attributes: true, attributeFilter: ["class"] });
+function updateQuick() { $("#quick").classList.toggle("hidden", !state.data || !sheet.classList.contains("hidden") || document.body.classList.contains("jobmode")); }
+
 $("#photoInput").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) takePhoto(f); };
 $("#galleryInput").onchange = async e => { const fs = [...e.target.files]; e.target.value = ""; for (const f of fs) await takePhoto(f); };
 $("#gpkgInput").onchange = async e => {
