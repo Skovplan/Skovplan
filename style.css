@@ -271,3 +271,8 @@ img.tfoto { max-width: 100%; max-height: 220px; border-radius: 8px; margin-top: 
 #jobChip { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 950; background: #e8710a; color: #fff; border: 0; font-weight: 700; border-radius: 22px; padding: 10px 18px; box-shadow: 0 2px 10px rgba(0,0,0,.3); }
 #jobChip.hidden { display: none; }
 body.jobmode #btnMenu, body.jobmode #btnTasks { visibility: hidden; }
+/* CLAUDE-1245: stakke til afhentning */
+.pile-pin { width: 30px; height: 30px; border-radius: 50%; background: #8a5a2b; color: #fff; font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.pile-pin.done { background: #2e7d32; }
+.pile-pin.focus { outline: 3px solid #e8710a; }
+#pDate { margin-left: 8px; }

@@ -2084,14 +2084,148 @@ async function flushQueue() {
 window.addEventListener("online", () => { if (job) flushQueue().then(() => drawJob()); });
 /* Uden skovkort, men med gemte opgavelinks: vis entreprenørens opgaver i stedet for velkomsten. */
 function jobList() {
-  const links = savedLinks(); if (!links.length) return false;
+  const links = savedLinks(), picks = pickLinks(); if (!links.length && !picks.length) return false;
   $("#empty").classList.add("hidden");
-  openSheet(`<div class="head"><h3>Mine opgaver</h3></div>
-    <ul class="list tasks">${links.map(l => `<li data-job="${esc(l.token)}"><div class="grow"><b>${esc(l.title || "Opgave")}</b><br><span class="muted small">${esc(l.ejendom || "")} ${l.task ? statusChip(l.task.status) : ""}</span></div></li>`).join("")}</ul>
+  openSheet(`<div class="head"><h3>${links.length ? "Mine opgaver" : "Mine afhentninger"}</h3></div>
+    <ul class="list tasks">${links.map(l => `<li data-job="${esc(l.token)}"><div class="grow"><b>${esc(l.title || "Opgave")}</b><br><span class="muted small">${esc(l.ejendom || "")} ${l.task ? statusChip(l.task.status) : ""}</span></div></li>`).join("")}
+      ${picks.map(l => `<li data-pick="${esc(l.token)}"><div class="grow"><b>⛟ ${esc(l.title || "Stakke til afhentning")}</b><br><span class="muted small">${esc(l.ejendom || "")} · ${(l.card?.stakke || []).length} stakke</span></div></li>`).join("")}</ul>
     <p class="muted small">Åbn linket fra skovfogeden for at få en ny opgave hertil.</p>`, true);
-  sheet.querySelector(".tasks").onclick = e => { const li = e.target.closest("[data-job]"); if (!li) return; const l = links.find(x => x.token === li.dataset.job); openJob(l.token, l.db); };
+  sheet.querySelector(".tasks").onclick = e => {
+    const li = e.target.closest("[data-job]"), lp = e.target.closest("[data-pick]");
+    if (li) { const l = links.find(x => x.token === li.dataset.job); openJob(l.token, l.db); }
+    if (lp) { const l = picks.find(x => x.token === lp.dataset.pick); openPickup(l.token, l.db); }
+  };
   return true;
 }
+
+/* ---------- «Stak afhentet»: vognmandens link/QR fra vognmandskortet (CLAUDE-1245)
+   ?afhent=<kode>&db=<base64url {r, a}>[#stak=<reg_id>]. Koden giver kun adgang til kortets stakke. */
+const PICK_KEY = "afhentLinks", PICK_QUEUE = "afhentKoe";
+let pick = null, pickLayer = null;
+const localIso = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+const pickLinks = () => { try { return JSON.parse(safeLS(PICK_KEY) || "[]"); } catch (e) { return []; } };
+function rememberPick(l) { safeLS(PICK_KEY, JSON.stringify([l, ...pickLinks().filter(x => x.token !== l.token)].slice(0, 30))); }
+const pickQueue = () => { try { return JSON.parse(safeLS(PICK_QUEUE) || "[]"); } catch (e) { return []; } };
+async function pickRpc(fn, body) {
+  const res = await fetch(`${pick.db.r}/rpc/${fn}`, { method: "POST", headers: Object.assign({ "Content-Type": "application/json", apikey: pick.db.a },
+    /^eyJ/.test(pick.db.a) ? { Authorization: "Bearer " + pick.db.a } : {}), body: JSON.stringify(body) });
+  if (!res.ok) { let m = ""; try { m = (await res.json()).message; } catch (e) { /* ok */ } throw new Error(m || "HTTP " + res.status); }
+  return res.json();
+}
+/* Stakkens status: sidste melding (også dem, der venter på net). */
+function pileState(regId) {
+  const all = [...(pick.card.meldinger || []), ...pickQueue().filter(q => q.token === pick.token).map(q => ({ ...q, venter: true }))].filter(m => m.reg_id === regId);
+  const last = all[all.length - 1];
+  return last && last.type === "hentet" ? last : null;
+}
+const fmtDate = iso => iso ? new Date(iso + "T12:00").toLocaleDateString("da-DK", { day: "numeric", month: "short" }) : "";
+const pileName = p => `Stak ${esc(p.nr || "?")}${p.sortiment ? " · " + esc(p.sortiment) : ""}`;
+const pileAmount = p => [p.m3 ? `${String(p.m3).replace(".", ",")} m³` : "", p.rm ? `${String(p.rm).replace(".", ",")} rm` : "", p.traeart ? esc(p.traeart) : ""].filter(Boolean).join(" · ");
+async function openPickup(token, db64, regId) {
+  let dbc; try { dbc = JSON.parse(unb64url(db64)); } catch (e) { return toast("Linket er ugyldigt", 6000); }
+  const saved = pickLinks().find(l => l.token === token);
+  pick = { token, db: dbc, card: saved?.card || null, focus: regId || null };
+  $("#empty").classList.add("hidden"); document.body.classList.add("jobmode"); setBasemap(1);
+  if (pick.card) drawPickup(true);
+  await flushPickQueue();
+  try { const c = await pickRpc("felt_afhent_aaben", { p_token: token }); if (!c) throw new Error("Linket virker ikke længere. Bed om et nyt vognmandskort.");
+    pick.card = c; rememberPick({ token, db: db64, title: c.titel, ejendom: c.ejendom, card: c }); }
+  catch (e) { if (!pick.card) { openSheet(`<div class="head"><h3>Afhentning</h3></div><p>${esc(/Failed to fetch/.test(e.message) ? "Ingen forbindelse. Prøv igen, når der er net." : e.message)}</p>`); return; } }
+  drawPickup(true);
+}
+function drawPickupMap(fit) {
+  if (pickLayer) map.removeLayer(pickLayer);
+  pickLayer = L.layerGroup().addTo(map);
+  const pts = [];
+  for (const p of pick.card.stakke || []) {
+    if (p.lat == null || p.lon == null) continue;
+    const done = pileState(p.reg_id);
+    L.marker([p.lat, p.lon], { icon: L.divIcon({ className: "", html: `<div class="pile-pin${done ? " done" : ""}${pick.focus === p.reg_id ? " focus" : ""}">${done ? "✓" : esc(p.nr || "•")}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] }) })
+      .on("click", () => drawPile(p.reg_id)).addTo(pickLayer);
+    pts.push([p.lat, p.lon]);
+  }
+  if (fit && pts.length) {
+    const f = (pick.card.stakke || []).find(p => p.reg_id === pick.focus && p.lat != null);
+    if (f) map.setView([f.lat, f.lon], 17); else map.fitBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: 17 });
+  }
+}
+function drawPickup(fit) {
+  const c = pick.card;
+  if (pick.focus && (c.stakke || []).some(p => p.reg_id === pick.focus)) { drawPickupMap(fit); return drawPile(pick.focus); }
+  drawPickupMap(fit);
+  const piles = c.stakke || [], left = piles.filter(p => !pileState(p.reg_id)).length;
+  const queued = pickQueue().filter(q => q.token === pick.token).length;
+  openSheet(`<div class="head"><h3>${esc(c.titel || "Stakke til afhentning")}</h3><button class="close" id="pHide">Kort</button></div>
+    <p class="muted">${esc(c.ejendom || "")} · ${left ? `${left} af ${piles.length} stakke mangler` : "Alle stakke er hentet ✓"}</p>
+    ${c.besked ? `<div class="jnote">${esc(c.besked).replace(/\n/g, "<br>")}</div>` : ""}
+    ${queued ? `<p class="warn">${queued} melding${queued === 1 ? "" : "er"} sendes, når der er net.</p>` : ""}
+    <ul class="list piles">${piles.map(p => { const d = pileState(p.reg_id); return `<li data-pile="${esc(p.reg_id)}"><div class="grow"><b>${pileName(p)}</b><br>
+      <span class="muted small">${pileAmount(p)}${p.koeber ? " · " + esc(p.koeber) : ""}${p.ordre ? " · ordre " + esc(p.ordre) : ""}</span></div>
+      ${d ? `<span class="stchip st-done">Hentet ${fmtDate(d.dato)}</span>` : '<span class="stchip st-open">Mangler</span>'}</li>`; }).join("")}</ul>
+    <p class="muted small">Du er <b>${esc(myName() || "ikke navngivet")}</b> · <button class="linklike" id="pName">skift navn</button></p>`, true);
+  $("#pHide").onclick = e => { e.stopPropagation(); closeSheet(); pickChip(); };
+  $("#pName").onclick = () => { askName(true); drawPickup(); };
+  sheet.querySelector(".piles").onclick = e => { const li = e.target.closest("[data-pile]"); if (li) drawPile(li.dataset.pile); };
+}
+function pickChip() { const b = $("#jobChip"); b.textContent = "⛟ Vis stakkene"; b.classList.remove("hidden"); b.onclick = () => { b.classList.add("hidden"); b.textContent = "⚑ Vis opgaven"; drawPickup(); }; }
+function drawPile(regId) {
+  const p = (pick.card.stakke || []).find(x => x.reg_id === regId); if (!p) return drawPickup();
+  pick.focus = regId; drawPickupMap(false);
+  if (p.lat != null) map.panTo([p.lat, p.lon]);
+  const d = pileState(regId), many = (pick.card.stakke || []).length > 1;
+  openSheet(`<div class="head"><h3>${pileName(p)}</h3><button class="close" id="pBack">${many ? "Alle stakke" : "Kort"}</button></div>
+    <p>${pileAmount(p) || ""}${p.koeber ? `<br>Køber: ${esc(p.koeber)}${p.ordre ? " · ordre " + esc(p.ordre) : ""}` : ""}<br><span class="muted small">${esc(pick.card.ejendom || "")}</span></p>
+    ${p.lat != null ? `<div class="actions"><a class="btn" href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lon}" target="_blank" rel="noopener">➜ Kør hertil</a><button data-pgo>Vis vej i appen</button></div>` : ""}
+    ${d ? `<div class="jnote">✓ Hentet ${fmtDate(d.dato)}${d.navn ? " af " + esc(d.navn) : ""}${d.note ? "<br>" + esc(d.note) : ""}${d.venter ? '<br><span class="muted small">Sendes, når der er net</span>' : ""}</div>
+        <div class="stack"><button class="big" id="pUndo">↶ Fortryd: stakken er ikke hentet</button></div>`
+      : `<label class="small">Hentet dato <input type="date" id="pDate" value="${localIso()}" max="${localIso()}"></label>
+        <textarea id="pNote" placeholder="Evt. note, fx læs nr., rest ligger tilbage …"></textarea>
+        <button class="big" id="pPhoto">📷 Foto (valgfrit)</button><img id="pPrev" class="hidden tfoto" alt="">
+        <input type="file" id="pFile" accept="image/*" capture="environment" class="hidden">
+        <div class="stack"><button class="primary big" id="pSend">✓ Meld stakken afhentet</button></div>`}`, true);
+  $("#pBack").onclick = e => { e.stopPropagation(); pick.focus = null; if (many) drawPickup(); else { closeSheet(); pickChip(); } };
+  sheet.querySelector("[data-pgo]")?.addEventListener("click", () => { closeSheet(); pickChip(); goTo(p.lat, p.lon, "Stak " + (p.nr || "")); });
+  let photo = null;
+  if (d) { $("#pUndo").onclick = () => sendPick(p, "fortryd", {}); return; }
+  $("#pPhoto").onclick = () => $("#pFile").click();
+  $("#pFile").onchange = async e => { const f = e.target.files[0]; if (!f) return; photo = await shrinkImage(f, 1280, 0.72);
+    $("#pPrev").src = URL.createObjectURL(photo); $("#pPrev").classList.remove("hidden"); $("#pPhoto").textContent = "📷 Skift foto"; };
+  $("#pSend").onclick = async () => { $("#pSend").disabled = true;
+    await sendPick(p, "hentet", { dato: $("#pDate").value || localIso(), note: $("#pNote").value.trim(), foto: photo ? await b64(photo) : null }); };
+}
+async function sendPick(p, type, extra) {
+  if (!askName()) return toast("Skriv dit navn, så skovejeren ved, hvem der har hentet");
+  const item = { token: pick.token, reg_id: p.reg_id, type, navn: myName(), dato: extra.dato || localIso(), note: extra.note || null, foto: extra.foto || null, t: Date.now() };
+  safeLS(PICK_QUEUE, JSON.stringify([...pickQueue(), item]));
+  if (navigator.vibrate) navigator.vibrate(40);
+  await flushPickQueue();
+  const left = pickQueue().some(x => x.t === item.t);
+  toast(left ? "Gemt på telefonen. Sendes, når der er net." : type === "hentet" ? `Stak ${p.nr || ""} er meldt hentet. Tak!` : "Fortrudt", 4000);
+  const next = type === "hentet" && (pick.card.stakke || []).length > 1;
+  if (next) pick.focus = null;
+  drawPickup();
+}
+let pickFlushing = false;
+async function flushPickQueue() {
+  if (pickFlushing || !pick || !navigator.onLine) return; pickFlushing = true;
+  try {
+    for (const item of pickQueue()) {
+      if (item.token !== pick.token) continue;
+      try {
+        const list = await pickRpc("felt_afhent_meld", { p_token: item.token, p_reg_id: item.reg_id, p_type: item.type, p_dato: item.dato, p_navn: item.navn, p_note: item.note, p_foto: item.foto });
+        if (Array.isArray(list) && pick.card) { pick.card.meldinger = list; rememberPick({ ...(pickLinks().find(l => l.token === pick.token) || {}), token: pick.token, card: pick.card }); }
+        safeLS(PICK_QUEUE, JSON.stringify(pickQueue().filter(x => x.t !== item.t)));
+      } catch (e) {
+        if (/Failed to fetch|NetworkError|HTTP 5/.test(e.message)) break;
+        toast("Kunne ikke sende: " + e.message, 6000);
+        safeLS(PICK_QUEUE, JSON.stringify(pickQueue().filter(x => x.t !== item.t)));
+      }
+    }
+  } finally { pickFlushing = false; }
+}
+window.addEventListener("online", () => { if (pick) flushPickQueue().then(() => drawPickup()); });
+function hashPile() { const m = /stak=([^&]+)/.exec(location.hash); try { return m ? decodeURIComponent(m[1]) : null; } catch (e) { return null; } }
+window.addEventListener("hashchange", () => { const r = hashPile(); if (pick && r) { pick.focus = r; drawPickup(true); } });
 
 /* ------------------------------------------------------------------ online synkronisering
    Har feltpakken en «sync»-blok (Supabase), sendes registreringerne automatisk, når der er net:
@@ -2633,6 +2767,7 @@ async function updateMap(d, base, version) {
   if (linked || customer) history.replaceState(null, "", location.pathname);
   if (customer) chooseProperty(customer); else if (linked) downloadPackage(linked);
   if (params.get("opgave") && params.get("db")) openJob(params.get("opgave"), params.get("db"));   // CLAUDE-1211
+  else if (params.get("afhent") && params.get("db")) openPickup(params.get("afhent"), params.get("db"), hashPile());   // CLAUDE-1245
   else if (!state.data && !linked && !customer) jobList();
   if (syncCfg()) { state.syncHash = safeLS("syncHash:" + syncCfg().noegle); scheduleSync(); }
   setTimeout(checkMapUpdates, 4000); setInterval(checkMapUpdates, 10 * 60 * 1000); setInterval(syncTasks, 2 * 60 * 1000);
