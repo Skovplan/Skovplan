@@ -48,7 +48,7 @@
 
 <nav id="menu" class="hidden">
   <p class="mhead">I skoven</p>
-  <button data-act="tasks"><i>☑</i>Opgaver</button>
+  <button data-act="tasks" data-c><i>☑</i>Opgaver</button>
   <button data-act="pileList"><i>▤</i>Stakke og stokke</button>
   <button data-act="track" id="btnTrack"><i>●</i>Optag ruten, jeg går</button>
   <button data-act="generalNote"><i>✎</i>Generel note med billeder</button>
@@ -61,10 +61,11 @@
   <button data-act="sync" id="btnSync" class="hidden"><i>⇅</i>Send til SkovPlan nu</button>
   <button data-act="updatePackage" id="btnUpdatePkg" class="hidden"><i>⟳</i>Hent nyeste feltpakke</button>
   <button data-act="export"><i>⇪</i>Eksportér til SkovPlan (fil)</button>
-  <button data-act="welcome"><i>⌂</i>Åbn feltpakke / skovkort</button>
-  <button data-act="install" id="btnInstall" class="hidden"><i>📲</i>Installér som app</button>
+  <button data-act="welcome" data-c><i>⌂</i>Åbn feltpakke / skovkort</button>
+  <button data-act="install" id="btnInstall" class="hidden" data-c><i>📲</i>Installér som app</button>
   <button data-act="clearRegs" class="danger"><i>✕</i>Slet eksporterede registreringer</button>
-  <p class="muted" id="menuInfo"></p>
+  <button data-act="role" data-c><i>☺</i>Skift rolle</button>
+  <p class="muted" id="menuInfo" data-c></p>
 </nav>
 
 <input type="file" id="gpkgInput" multiple hidden>

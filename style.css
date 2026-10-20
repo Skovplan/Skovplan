@@ -334,3 +334,16 @@ body:has(#quick:not(.hidden)) #trackDot { bottom: calc(78px + env(safe-area-inse
 .tile svg { color: var(--green); }
 .tile.main svg { color: #fff; }
 body:has(#menu:not(.hidden)) #quick { display: none; }
+
+/* CLAUDE-1280: roller */
+.overlay.role { z-index: 1400; }
+.overlay.role .card { width: min(420px, 100%); text-align: center; }
+.overlay.role .rlogo { width: 54px; height: auto; }
+.roles { display: grid; gap: 8px; margin-top: 12px; }
+.roles button { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 2px; padding: 12px 14px; background: var(--tile); border: 2px solid transparent; }
+.roles button b { font-size: 17px; color: var(--green); }
+.roles button span { font-size: 13px; color: var(--muted); }
+.roles button.on { border-color: var(--green); }
+body.role-entreprenor #menu > :not([data-c]) { display: none; }
+body.role-entreprenor #quick .qmain, body.role-entreprenor #quick .qside[data-act="pileList"] { display: none; }
+body.role-entreprenor #quick .qside[data-act="tasks"] { background: var(--green); color: #fff; border-radius: 16px; padding: 10px 20px; }

@@ -624,6 +624,12 @@ function registerSheet() {
 }
 
 function selectStand(f) {
+  if (isContractor()) {   // CLAUDE-1280: kun litraets navn og egne opgaver
+    const p = f.properties, ts = openTasks().filter(t => isMine(t) && t.stand?.key === standKey(p));
+    state.selected = f; restyle();
+    return openSheet(`<div class="head"><h3>${esc(standLabel(p))} · ${esc(p["træart"] || "")}</h3><button class="close">Luk</button></div>
+      ${ts.length ? `<div class="stand-tasks">${ts.map(t => `<button class="task-row" data-act="openTask" data-id="${esc(t.id)}">⚑ ${esc(t.title)}</button>`).join("")}</div>` : '<p class="muted">Ingen opgaver til dig her.</p>'}`);
+  }
   state.selected = f; restyle();
   const p = f.properties, key = standKey(p), regs = state.regs.filter(r => r.stand?.key === key);
   const s = standSummary(regs);
@@ -1405,7 +1411,7 @@ function backToStand(reg) {
 let regLayer = null;
 function drawRegMarkers() {
   if (regLayer) map.removeLayer(regLayer);
-  regLayer = L.layerGroup(state.regs.filter(r => r.lat).map(r => r.type === "spor"
+  regLayer = L.layerGroup((isContractor() ? [] : state.regs).filter(r => r.lat).map(r => r.type === "spor"
     ? L.polyline(r.data.points.map(p => [p[0], p[1]]), { color: "#e8710a", weight: 3, opacity: 0.8, dashArray: "1 6", lineCap: "round" }).on("click", () => editReg(r.id))
     : L.circleMarker([r.lat, r.lon], {
     radius: r.type === "proeveflade" || r.type === "vinkel" ? 7 : 5, color: "#fff", weight: 2, fillOpacity: 1,
@@ -1827,6 +1833,44 @@ function taskNames() {
   for (const r of state.regs) { set.add(r.data?.skover); set.add(r.data?.udkoerer); }
   return [...set].map(s => (s || "").trim()).filter(Boolean).sort((a, b) => a.localeCompare(b, "da"));
 }
+/* ---------- roller (CLAUDE-1280): skovfoged, skytte og ejer ser alt; entreprenøren kun sine egne opgaver */
+const ROLES = [["skovfoged", "Skovfoged", "Planlægger og følger arbejdet i skoven"], ["skytte", "Skytte", "Arbejder i skoven, registrerer og løser opgaver"],
+  ["ejer", "Ejer", "Ejer skoven og vil følge med"], ["entreprenor", "Entreprenør", "Ser kun de opgaver, jeg får, og melder tilbage"]];
+const role = () => safeLS("rolle") || "";
+const isContractor = () => role() === "entreprenor";
+const roleName = () => (ROLES.find(r => r[0] === role()) || [])[1] || "";
+function askRole(force) {
+  if (!force && role()) return applyRole();
+  $("#roleCard")?.remove();
+  document.body.insertAdjacentHTML("beforeend", `<div id="roleCard" class="overlay role"><div class="card">
+    <img src="logo-symbol.png" alt="" class="rlogo"><h2>Hvad er din rolle?</h2>
+    <p class="muted">Appen viser det, du har brug for. Du kan skifte i menuen.</p>
+    <div class="roles">${ROLES.map(([k, l, d]) => `<button data-role="${k}" class="${k === role() ? "on" : ""}"><b>${l}</b><span>${d}</span></button>`).join("")}</div>
+  </div></div>`);
+  $("#roleCard").onclick = e => { const b = e.target.closest("[data-role]"); if (!b) return;
+    safeLS("rolle", b.dataset.role); $("#roleCard").remove(); applyRole(); toast("Rolle: " + roleName()); if (isContractor() && state.data) taskList(); };
+}
+function applyRole() {
+  document.body.classList.toggle("role-entreprenor", isContractor());
+  if (isContractor() && state.selected) { state.selected = null; closeSheet(); }
+  drawRegMarkers(); drawTaskMarkers(); updateTaskBadge(); updateQuick();
+}
+/* Entreprenøren med feltpakke: opgaven åbnes som entreprenørens side (gå i gang, problem, færdig – med foto og log). */
+async function openOwnJob(t) {
+  const c = syncCfg(); if (!c) return toast("Opgaven kan ikke meldes uden online-synk i feltpakken", 5000);
+  let token = safeLS("opgtok:" + t.id);
+  if (!token) {
+    try { token = await rpc("felt_opgave_link", { p_noegle: c.noegle, p_id: t.id, p_ny: false }); safeLS("opgtok:" + t.id, token); }
+    catch (e) { return toast(/Failed to fetch|NetworkError/.test(e.message) ? "Første gang skal der være net for at åbne opgaven" : e.message, 5000); }
+  }
+  openJob(token, b64url(JSON.stringify({ r: c.rest, a: c.anon })));
+}
+function leaveJob() {
+  job = null; if (jobLayer) { map.removeLayer(jobLayer); jobLayer = null; }
+  document.body.classList.remove("jobmode"); $("#jobChip").classList.add("hidden");
+  const saved = safeLS("basemap"); setBasemap(saved === null ? 0 : +saved % BASEMAPS.length);
+  syncTasks().finally(() => taskList("mine"));
+}
 function updateTaskBadge() {
   const b = $("#btnTasks"); if (!b) return;
   const n = openTasks().filter(isMine).length;
@@ -1841,7 +1885,7 @@ function taskPoint(t) {
 function drawTaskMarkers() {
   if (taskLayer) map.removeLayer(taskLayer); taskLayer = null;
   if (!state.data) return;
-  taskLayer = L.layerGroup(openTasks().map(t => [t, taskPoint(t)]).filter(([, p]) => p).map(([t, p]) =>
+  taskLayer = L.layerGroup(openTasks().filter(t => !isContractor() || isMine(t)).map(t => [t, taskPoint(t)]).filter(([, p]) => p).map(([t, p]) =>
     L.marker(p, { icon: L.divIcon({ className: "", html: `<div class="task-pin${isMine(t) ? " mine" : ""}${t.due && t.due < todayIso() ? " late" : ""}">⚑</div>`, iconSize: [26, 26], iconAnchor: [-6, 30] }) })
       .on("click", () => taskForm(t)))).addTo(map);
 }
@@ -1858,16 +1902,19 @@ function taskList(tab = "mine") {
   if (!state.data) return toast("Åbn et skovkort først");
   if (state.selected) { state.selected = null; restyle(); }
   const all = (state.tasks || []).filter(t => !t.deleted);
-  const sets = { mine: openTasks().filter(isMine), alle: openTasks(), udfoert: all.filter(t => t.status === "udført") };
+  const own = isContractor();
+  const sets = { mine: openTasks().filter(isMine), alle: openTasks(), udfoert: all.filter(t => t.status === "udført" && (!own || isMine(t))) };
+  if (own && tab === "alle") tab = "mine";
   const sort = a => [...a].sort((x, y) => (x.due || "9999").localeCompare(y.due || "9999") || y.updated.localeCompare(x.updated));
   const list = tab === "udfoert" ? [...sets.udfoert].sort((x, y) => (y.doneAt || "").localeCompare(x.doneAt || "")) : sort(sets[tab]);
   openSheet(`<div class="head"><h3>Opgaver</h3><button class="close">Luk</button></div>
-    <div class="seg" id="tTabs">${[["mine", "Mine"], ["alle", "Alle åbne"], ["udfoert", "Udført"]].map(([k, l]) => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${l} (${sets[k].length})</button>`).join("")}</div>
-    <button class="primary big" id="tNew">+ Ny opgave</button>
+    <div class="seg" id="tTabs">${[["mine", "Mine"], ...(own ? [] : [["alle", "Alle åbne"]]), ["udfoert", "Udført"]].map(([k, l]) => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${l} (${sets[k].length})</button>`).join("")}</div>
+    ${own ? "" : '<button class="primary big" id="tNew">+ Ny opgave</button>'}
     ${list.length ? `<ul class="list tasks">${list.map(taskLine).join("")}</ul>` : `<p class="muted">${tab === "mine" ? "Ingen åbne opgaver til dig." : tab === "alle" ? "Ingen åbne opgaver." : "Ingen udførte opgaver endnu."}</p>`}
-    <p class="muted small">Du er <b>${esc(myName() || "ikke navngivet")}</b> · <button class="linklike" id="tName">skift navn</button>${state.taskSyncNote ? `<br>${esc(state.taskSyncNote)}` : ""}</p>`);
+    ${own && !list.length && tab === "mine" ? `<p class="muted small">Opgaver, som skovfogeden giver til <b>${esc(myName() || "dit navn")}</b>, kommer her. Navnet skal stå på opgaven, som du har skrevet det her.</p>` : ""}
+    <p class="muted small">Du er <b>${esc(myName() || "ikke navngivet")}</b>${roleName() ? " · " + roleName() : ""} · <button class="linklike" id="tName">skift navn</button>${state.taskSyncNote ? `<br>${esc(state.taskSyncNote)}` : ""}</p>`);
   $("#tTabs").onclick = e => { const b = e.target.closest("[data-tab]"); if (b) taskList(b.dataset.tab); };
-  $("#tNew").onclick = () => taskForm(null);
+  if ($("#tNew")) $("#tNew").onclick = () => taskForm(null);
   $("#tName").onclick = () => { askName(true); taskList(tab); };
   sheet.querySelector(".tasks")?.addEventListener("click", async e => {
     const tick = e.target.closest("[data-tick]");
@@ -1882,6 +1929,7 @@ async function toggleDone(t) {
   toast(done ? "Udført ✓" : "Opgaven er åben igen");
 }
 function taskForm(t, back) {
+  if (isContractor()) return t ? openOwnJob(t) : toast("Opgaver laves af skovfogeden");
   const isNew = !t;
   if (isNew && !askName()) return toast("Skriv dit navn for at lave en opgave");
   const here = state.me ? standAt(state.me.lon, state.me.lat) : null, sel = state.selected || here;
@@ -2050,7 +2098,9 @@ function drawJob(fit) {
       <button class="big" data-meld="besked">✎ Skriv en besked</button>
     </div>
     ${taskLogHtml(t)}
+    ${state.data && isContractor() ? '<button class="big ghost" id="jAll">‹ Alle mine opgaver</button>' : ""}
     <p class="muted small">Du er <b>${esc(myName() || "ikke navngivet")}</b> · <button class="linklike" id="jName">skift navn</button></p>`, true);
+  $("#jAll")?.addEventListener("click", leaveJob);
   $("#jHide").onclick = e => { e.stopPropagation(); closeSheet(); jobChip(); };
   $("#jName").onclick = () => { askName(true); drawJob(); };
   sheet.querySelector("[data-jgo]")?.addEventListener("click", () => { closeSheet(); jobChip(); goTo(t.punkt[0], t.punkt[1], t.title); });
@@ -2343,7 +2393,7 @@ window.addEventListener("online", () => scheduleSync());
 function refreshMenuInfo() {
   const n = state.regs.length, ne = state.regs.filter(r => !r.exported).length;
   const c = syncCfg(), ns = state.regs.filter(r => !r.synced).length;
-  $("#menuInfo").textContent = `${state.data ? (state.data.name + " · indlæst " + new Date(state.data.loaded).toLocaleDateString("da-DK")) : "Intet skovkort"} · ${state.ortho ? "ortofoto gemt" : "intet ortofoto"} · ${n} registreringer` +
+  $("#menuInfo").textContent = (roleName() ? roleName() + " · " : "") + `${state.data ? (state.data.name + " · indlæst " + new Date(state.data.loaded).toLocaleDateString("da-DK")) : "Intet skovkort"} · ${state.ortho ? "ortofoto gemt" : "intet ortofoto"} · ${n} registreringer` +
     (c ? ` · online: ${ns ? ns + " venter" : "alt sendt"}${state.syncStatus ? " (" + state.syncStatus + ")" : ""}` : (ne ? `, ${ne} ikke eksporteret` : ""));
   $("#btnSync")?.classList.toggle("hidden", !c);
   $("#btnMenu").classList.toggle("pending", c ? ns > 0 : ne > 0);
@@ -2363,7 +2413,7 @@ const ACTIONS = {
   generalNote: () => newReg("note", true),
   goStand: () => { const f = state.selected; if (!f) return; const c = standTarget(f); closeSheet(); goTo(c.lat, c.lng, "Litra " + standLabel(f.properties)); },
   track: toggleTrack,
-  tasks: () => taskList(), newTask: () => taskForm(null), register: registerSheet,
+  tasks: () => taskList(), newTask: () => taskForm(null), register: () => isContractor() ? taskList() : registerSheet(), role: () => askRole(true),
   openTask: el => { const t = (state.tasks || []).find(x => x.id === el.dataset.id); if (t) taskForm(t); },
   pileList: () => pileList(), newStak: () => newPile("stak"), newStok: () => newPile("stok"),
   packageLink: askPackageLink,
@@ -2831,6 +2881,8 @@ async function updateMap(d, base, version) {
   let customer = null; try { customer = params.get("kunde") ? new URL(params.get("kunde")).href : null; } catch (e) { /* ugyldigt */ }
   if (linked || customer) history.replaceState(null, "", location.pathname);
   if (customer) chooseProperty(customer); else if (linked) downloadPackage(linked);
+  if (!role() && ((params.get("opgave") || params.get("afhent")) && params.get("db"))) safeLS("rolle", "entreprenor");   // CLAUDE-1280: kom via et opgavelink
+  askRole();
   if (params.get("opgave") && params.get("db")) openJob(params.get("opgave"), params.get("db"));   // CLAUDE-1211
   else if (params.get("afhent") && params.get("db")) openPickup(params.get("afhent"), params.get("db"), hashPile());   // CLAUDE-1276
   else if (!state.data && !linked && !customer) jobList();
