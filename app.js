@@ -616,6 +616,8 @@ function selectStand(f) {
     <button class="big" data-act="vinkel">◔ Relaskopmåling</button>
     <button class="big" data-act="taksation">Taksér litraet direkte (Hg, Dg, stamtal …)</button>
     <button class="big" data-act="goStand">➜ Gå til ${esc(standLabel(p))}</button>
+    ${(() => { const ts = openTasks().filter(t => t.stand?.key === key); return `<div class="stand-tasks">${ts.map(t => `<button class="task-row" data-act="openTask" data-id="${esc(t.id)}">⚑ ${esc(t.title)}<span class="muted small">${t.assignee ? " · " + (sameName(t.assignee, myName()) ? "dig" : esc(t.assignee)) : ""}${t.due ? " · frist " + new Date(t.due + "T12:00").toLocaleDateString("da-DK", { day: "numeric", month: "short" }) : ""}</span></button>`).join("")}
+      <button data-act="newTask">+ Opgave i ${esc(standLabel(p))}</button></div>`; })()}
     ${s.spread && s.spread.n > 1 ? `<p class="muted small">Relaskop: ${s.spread.n} punkter, G ${fmt(s.spread.mean, 1)} m²/ha${s.spread.se !== null ? ` ± ${fmt(s.spread.se, 0)} % (middelfejl)` : ""}${s.spread.se > 10 ? ". Tag flere punkter for et sikrere tal." : ""}</p>` : ""}
     ${s.plots || s.points || s.Hg != null || s.Dg != null ? `<div class="result">${standResultHtml(s, p)}</div>` : ""}
     <ul class="list">${regs.filter(r => !r.data.parent).map(regItem).join("")}</ul>`);
@@ -1049,39 +1051,48 @@ async function openSight(d, api) {
     $("#sgMsg").innerHTML = `<b>Kameraet kunne ikke åbnes.</b><br>${esc(e.message || e.name)}. Giv appen lov til kameraet i telefonens indstillinger, eller tæl med dit eget relaskop.`;
     return;
   }
+  /* CLAUDE-1210: tryk på et træ, så tæller det med det samme. Appen måler stammen: bredere end åbningen = ind,
+     lige så bred (±8 %) = grænsetræ (½), smallere = ude (tælles ikke, men kan tælles alligevel). Kan kanterne ikke
+     ses, tælles træet som ind, fordi du selv har vurderet det; ↶ fortryder. */
   const count = () => {
     const c = sightCal(); if (!c) return calibrate();
-    const w = sightPx(d.baf, sightF(c)), s = vinkelStats(d);
+    const w = sightPx(d.baf, sightF(c));
     $("#sgOver").innerHTML = `<div class="sg-gap" style="width:${w.toFixed(1)}px"></div>`;
-    $("#sgMsg").innerHTML = `<b>Tryk på stammen</b> i 1,3 m højde, så måler appen, om den er bredere end åbningen. Du kan også selv trykke Ind eller Grænse.
-      <br><span class="small">Drej en hel omgang. Et træ på 30 cm er grænsetræ i ${fmt(reachM(30, d.baf), 1)} m afstand. Kamerasigtet er en hjælp, ikke et kalibreret relaskop (ingen hældningskorrektion).</span>`;
+    $("#sgMsg").innerHTML = `<b>Tryk på hvert træ, der er bredere end åbningen.</b> Det tæller med det samme.
+      <br><span class="small">Sigt i 1,3 m højde og drej en hel omgang. <button id="sgCal" class="linklike">Kalibrér</button></span>`;
+    $("#sgCal").onclick = calibrate;
     const ov = $("#sgOver");
+    const mark = (x, y, cls, txt, r) => {
+      ov.querySelectorAll(".sg-det,.sg-edge").forEach(n => n.remove());
+      ov.insertAdjacentHTML("beforeend", (r ? `<div class="sg-edge" style="left:${r.left}px;top:${y - 60}px"></div><div class="sg-edge" style="left:${r.right}px;top:${y - 60}px"></div>` : "")
+        + `<div class="sg-dot ${cls}" style="left:${x}px;top:${y}px"></div>`
+        + `<div class="sg-det ${cls}" style="left:${Math.min(Math.max(x, 130), innerWidth - 130)}px;top:${y + 60}px">${txt}</div>`);
+      const dot = ov.lastElementChild.previousElementSibling; setTimeout(() => dot.remove(), 2500);
+    };
     ov.onpointerdown = e => {
+      const force = e.target.closest("[data-force]");
+      if (force) { api.bump(Math.min(api.art(), d.counts.length - 1), force.dataset.force); force.parentElement.remove(); bottom(); return; }
       const i = Math.min(api.art(), d.counts.length - 1), r = trunkWidth($("#sgVid"), e.clientX, e.clientY);
-      const mark = (cls, txt, x = e.clientX) => { ov.querySelectorAll(".sg-det,.sg-edge").forEach(n => n.remove());
-        ov.insertAdjacentHTML("beforeend", (r ? `<div class="sg-edge" style="left:${r.left}px;top:${e.clientY - 60}px"></div><div class="sg-edge" style="left:${r.right}px;top:${e.clientY - 60}px"></div>` : "")
-          + `<div class="sg-det ${cls}" style="left:${Math.min(Math.max(x, 130), innerWidth - 130)}px;top:${e.clientY + 70}px">${txt}</div>`); };
-      if (!r) { mark("unk", "Kan ikke se stammens kanter. Vurdér selv."); return; }
+      if (!r) { api.bump(i, "ind"); bottom(); return mark(e.clientX, e.clientY, "in", "Talt som ind (kanterne kunne ikke ses)"); }
       // stammens vinkelbredde (rigtig også uden for midten af billedet) sammenlignet med sigtets vinkel
       const f = sightF(c), cx = innerWidth / 2, ang = Math.atan((r.right - cx) / f) - Math.atan((r.left - cx) / f);
       const ratio = ang / (2 * Math.asin(Math.sqrt(d.baf) / 100));
-      // ±8 % om åbningens bredde regnes som grænsetræ; sikre ind-træer tælles med det samme
-      if (ratio > 1.08 && r.sure) { api.bump(i, "ind"); count(); mark("in", `Ind ✓ (${fmt(ratio, 2)}× åbningen)`); }
-      else if (ratio < 0.92 && r.sure) mark("out", `Ude (${fmt(ratio, 2)}× åbningen) – tælles ikke`);
-      else mark("bord", `Tæt på grænsen (${fmt(ratio, 2)}×). Tryk Ind eller Grænse selv.`);
+      if (ratio >= 1.08) { api.bump(i, "ind"); mark(e.clientX, e.clientY, "in", `Ind ✓ <small>${fmt(ratio, 2)}×</small>`, r); }
+      else if (ratio >= 0.92) { api.bump(i, "gr"); mark(e.clientX, e.clientY, "bord", `Grænsetræ ½ <small>${fmt(ratio, 2)}×</small>`, r); }
+      else mark(e.clientX, e.clientY, "out", `Ude <small>${fmt(ratio, 2)}×</small> <button data-force="ind">Tæl alligevel</button>`, r);
+      bottom();
     };
-    const i = Math.min(api.art(), d.counts.length - 1), row = d.counts[i];
+    bottom();
+  };
+  const bottom = () => {
+    const s = vinkelStats(d), i = Math.min(api.art(), d.counts.length - 1);
     $("#sgBottom").innerHTML = `
-      <div class="sg-arts">${d.counts.map((r, k) => `<button data-art="${k}" class="${k === i ? "on" : ""}">${esc(r.art)} <b>${fmtCnt((num(r.ind) || 0) + 0.5 * (num(r.gr) || 0))}</b></button>`).join("")}</div>
-      <div class="sg-sum">${fmtCnt(s.cnt)} træer · G ${fmt(s.G, 1)} m²/ha${s.cnt > 20 ? " · mange træer: overvej højere faktor" : ""}</div>
-      <div class="sg-btns"><button id="sgUndo">↶</button><button id="sgGr" class="vgr">Grænse<b>${fmt(num(row.gr) || 0, 0)}</b></button>
-        <button id="sgIn" class="vin">Ind<b>${fmt(num(row.ind) || 0, 0)}</b></button></div>
-      <div class="sg-links"><button id="sgCal" class="linklike">Kalibrér igen</button><button id="sgDone" class="linklike">Færdig</button></div>`;
-    $("#sgIn").onclick = () => { api.bump(i, "ind"); count(); };
-    $("#sgGr").onclick = () => { api.bump(i, "gr"); count(); };
-    $("#sgUndo").onclick = () => { api.undo(); count(); };
-    $("#sgBottom").querySelector(".sg-arts").onclick = e => { const b = e.target.closest("[data-art]"); if (b) { api.art(+b.dataset.art); count(); } };
-    $("#sgCal").onclick = calibrate; $("#sgDone").onclick = close;
+      <div class="sg-sum"><b>${fmtCnt(s.cnt)}</b> træer · G ${fmt(s.G, 1)} m²/ha${s.cnt > 20 ? " · mange: brug højere faktor næste gang" : ""}</div>
+      ${d.counts.length > 1 ? `<div class="sg-arts">${d.counts.map((r, k) => `<button data-art="${k}" class="${k === i ? "on" : ""}">${esc(r.art)} <b>${fmtCnt((num(r.ind) || 0) + 0.5 * (num(r.gr) || 0))}</b></button>`).join("")}</div>` : ""}
+      <div class="sg-btns"><button id="sgUndo">↶ Fortryd</button><button id="sgDone" class="vin">✓ Færdig</button></div>`;
+    $("#sgUndo").onclick = () => { api.undo(); bottom(); };
+    $("#sgDone").onclick = close;
+    $("#sgBottom").querySelector(".sg-arts")?.addEventListener("click", e => { const b = e.target.closest("[data-art]"); if (b) { api.art(+b.dataset.art); bottom(); } });
   };
   const calibrate = () => {
     let L = innerWidth * 0.3, R = innerWidth * 0.7;
@@ -1129,8 +1140,8 @@ function vinkelForm(reg) {
       $("#vBody").innerHTML = ""; return;
     }
     const why = d.baf === adv.baf ? adv.why : adv.locked ? `Litraets andre punkter er talt med faktor ${adv.baf}.` : (d.bafWhy || "");
-    $("#vTop").innerHTML = `<div class="rbar"><span>Stil relaskopet på</span><b class="rfak">${fmt(d.baf, 0)}</b>
-        <button id="vChange" class="linklike">skift</button><button id="vHelp" class="qhelp" aria-label="Forklaring">?</button></div>
+    $("#vTop").innerHTML = `<div class="rbar"><span>Relaskop på</span><button id="vChange" class="rfak" aria-label="Skift faktor">${fmt(d.baf, 0)}</button>
+        <span class="grow"></span><button id="vHelp" class="qhelp" aria-label="Forklaring">?</button></div>
       ${showBaf ? `<div class="seg rseg">${BAFS.map(b => `<button data-baf="${b}" class="${b === d.baf ? "on" : ""}">${b}</button>`).join("")}</div>
         ${adv.locked ? `<p class="warn small">Litraets andre punkter er talt med ${adv.baf}. Brug helst samme faktor.</p>` : ""}` : ""}
       ${showHelp ? `<div class="help small"><p>${esc(why)} Hvert træ <b>ind</b> tæller ${fmt(d.baf, 0)} m²/ha, et <b>grænsetræ</b> det halve.</p>
@@ -1146,10 +1157,11 @@ function vinkelForm(reg) {
     d.bafWhy = first ? `Valgt ud fra skovtypen (${SKOVTYPER.find(x => x[2] === d.baf)[0].toLowerCase()}).` : "Valgt af dig."; drawTop(); };
   const drawBody = () => {
     $("#vBody").innerHTML = `
-      <div class="rarts" id="vArts"></div>
-      <div class="rbtns"><button class="vgr" id="vGr" type="button">Grænse<b></b></button><button class="vin" id="vIn" type="button">Ind<b></b></button></div>
-      <div class="rtools"><button id="vUndo" type="button">↶ Fortryd</button><button id="vCam" type="button" title="En hjælp, ikke et kalibreret relaskop">📷 Kamerasigte (hjælp)</button></div>
       <div class="result" id="vRes"></div>
+      <button class="primary big rcam" id="vCam" type="button">📷 Sigt med kameraet og tryk på træerne</button>
+      <p class="muted small ror">Eller tæl selv med dit relaskop:</p>
+      <div class="rbtns"><button class="vgr" id="vGr" type="button">Grænse<b></b></button><button class="vin" id="vIn" type="button">Ind<b></b></button></div>
+      <div class="rarts" id="vArts"></div>
       <details class="help"${d.trees.length ? " open" : ""}><summary>Mål et par træer (giver stamtal, Dg og Hg)</summary>
         <p class="muted small">Mål 1–2 træer på hvert punkt, så litraet får mindst 10 (mindst ${MIN_SAMPLED} af hver art, der skal have stamtal). Mål de talte træer, ikke de pæneste, i 1,3 m.</p>
         <table class="stokke"><thead><tr><th>#</th><th>Træart</th><th>Diam. cm</th><th>Højde m</th><th></th></tr></thead><tbody id="vTrees"></tbody></table>
@@ -1162,7 +1174,7 @@ function vinkelForm(reg) {
   /* Træarter som knapper; de store knapper tæller på den valgte. */
   const drawRows = () => {
     cur = Math.min(cur, d.counts.length - 1);
-    $("#vArts").innerHTML = d.counts.map((r, i) => `<button data-art="${i}" class="${i === cur ? "on" : ""}">${esc(r.art)} <b>${fmtCnt((num(r.ind) || 0) + 0.5 * (num(r.gr) || 0))}</b></button>`).join("")
+    $("#vArts").innerHTML = `<button id="vUndo" type="button" aria-label="Fortryd">↶</button>` + d.counts.map((r, i) => `<button data-art="${i}" class="${i === cur ? "on" : ""}">${esc(r.art)} <b>${fmtCnt((num(r.ind) || 0) + 0.5 * (num(r.gr) || 0))}</b></button>`).join("")
       + `<select id="vArt" aria-label="Tilføj træart"><option value="">+ art</option>${arts.filter(a => !d.counts.some(r => r.art === a)).map(a => `<option>${esc(a)}</option>`).join("")}</select>`;
     const row = d.counts[cur];
     $("#vIn b").textContent = fmt(num(row.ind) || 0, 0); $("#vGr b").textContent = fmt(num(row.gr) || 0, 0);
@@ -1176,10 +1188,10 @@ function vinkelForm(reg) {
     else if (s.cnt > 0 && s.cnt < 5 && d.done) { const b = [...BAFS].reverse().find(x => x < s.baf); warn = `Kun ${fmtCnt(s.cnt)} træer. ${b ? `Faktor ${b} giver et sikrere tal.` : ""}`; }
     // CLAUDE-1162 (K3): tal pr. art; punktets egne få målte træer er altid et skøn – litraets tal ses på litraet.
     const multi = s.byArt.length > 1;
-    $("#vRes").innerHTML = `<b>${fmtCnt(s.cnt)} træer · G ${fmt(s.G, 1)} m²/ha${v ? ` · ${fmt(v.V, 0)} m³/ha` : ""}</b>` +
+    $("#vRes").innerHTML = `<div class="rbig"><b>${fmtCnt(s.cnt)}</b> træer <span>G ${fmt(s.G, 1)} m²/ha${v ? ` · ${fmt(v.V, 0)} m³/ha` : ""}</span></div>` +
       (s.N ? `<br>${fmt(s.N, 0)} stk/ha · Dg ${fmt(s.Dg, 1)} cm${s.Hg ? ` · Hg ${fmt(s.Hg, 1)} m` : ""} <i>(skøn ud fra ${s.sampled} målte træer)</i>` : "") +
       (multi || (s.sampled && !s.N) ? "<br>" + s.byArt.map(a => `${esc(a.art)}: G ${fmt(a.G, 1)}${a.N ? `, ${fmt(a.N, 0)} stk/ha, Dg ${fmt(a.Dg, 1)}` : s.sampled ? ", ingen målte træer" : ""}`).join(" · ") : "") +
-      (v ? `<br><span class="muted small">Vedmasse = ${v.parts.length > 1 ? "Σ arter " : ""}G × Hg ${fmt(v.H, 1)} m (${v.hFrom}) × formtal ${v.parts.length > 1 ? v.parts.map(x => `${esc(x.art)} ${fmt(x.F, 2)}`).join(", ") : fmt(v.F, 2)}. ${VOL_DEF}.</span>` : s.G ? `<br><span class="muted small">Mål en højde for at få vedmassen.</span>` : "") +
+      (v ? `<details class="help small"><summary>Sådan er tallene regnet</summary>Vedmasse = ${v.parts.length > 1 ? "Σ arter " : ""}G × Hg ${fmt(v.H, 1)} m (${v.hFrom}) × formtal ${v.parts.length > 1 ? v.parts.map(x => `${esc(x.art)} ${fmt(x.F, 2)}`).join(", ") : fmt(v.F, 2)}. ${VOL_DEF}.</details>` : s.G ? `<br><span class="muted small">Mål en højde for at få vedmassen.</span>` : "") +
       (warn ? `<div class="warn">${esc(warn)}</div>` : "");
   };
   const drawTrees = () => {
@@ -1194,8 +1206,7 @@ function vinkelForm(reg) {
     const undo = () => { const h = hist.pop(); if (!h) return toast("Intet at fortryde"); d.counts[h[0]][h[1]] = Math.max(0, (num(d.counts[h[0]][h[1]]) || 0) - 1); drawRows(); };
     $("#vIn").onclick = () => bump(cur, "ind");
     $("#vGr").onclick = () => bump(cur, "gr");
-    $("#vUndo").onclick = undo;
-    $("#vArts").onclick = e => { const b = e.target.closest("[data-art]"); if (b) { cur = +b.dataset.art; drawRows(); } };
+    $("#vArts").onclick = e => { if (e.target.closest("#vUndo")) return undo(); const b = e.target.closest("[data-art]"); if (b) { cur = +b.dataset.art; drawRows(); } };
     $("#vArts").onchange = e => { if (e.target.id !== "vArt" || !e.target.value) return; const a = e.target.value;
       if (d.counts.length === 1 && d.counts[0].art === "Blandet" && !num(d.counts[0].ind) && !num(d.counts[0].gr)) d.counts = [];
       d.counts.push({ art: a, ind: 0, gr: 0 }); cur = d.counts.length - 1; drawRows(); };
@@ -1763,6 +1774,161 @@ async function clearExported() {
   dropRegs(r => r.exported); drawRegMarkers(); restyle(); refreshMenuInfo(); closeSheet();
 }
 
+/* ------------------------------------------------------------------ opgaver
+   CLAUDE-1210: opgaver pr. ejendom. Man kan lave sine egne og tildele dem til andre. Hver telefon gemmer
+   ejendommens opgaver i kv «opgaver:<id>»; med online-synk deles de via Supabase (felt_opgave_gem /
+   felt_opgaver_hent), så alle telefoner med samme feltpakke ser dem. Den nyeste ændring vinder. */
+const myName = () => (safeLS("mitNavn") || "").trim();
+function askName(force) {
+  if (myName() && !force) return myName();
+  const n = prompt("Hvad hedder du? Navnet står på de opgaver, du laver, og bruges til «Mine opgaver».", myName());
+  if (n !== null && n.trim()) { safeLS("mitNavn", n.trim()); updateTaskBadge(); }
+  return myName();
+}
+const sameName = (a, b) => !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+const openTasks = () => (state.tasks || []).filter(t => !t.deleted && t.status !== "udført");
+const isMine = t => sameName(t.assignee, myName()) || (!t.assignee && sameName(t.by, myName()));
+const todayIso = () => new Date().toISOString().slice(0, 10);
+async function loadTasks() {
+  state.tasks = state.data ? (await db.get("kv", "opgaver:" + state.data.id)) || [] : [];
+  drawTaskMarkers(); updateTaskBadge();
+}
+async function storeTasks() { if (state.data) await db.put("kv", state.tasks, "opgaver:" + state.data.id); }
+async function putTask(t) {
+  t.updated = new Date().toISOString(); t.dirty = true;
+  state.tasks = [...(state.tasks || []).filter(x => x.id !== t.id), t];
+  await storeTasks(); drawTaskMarkers(); updateTaskBadge(); syncTasks();
+}
+function taskNames() {
+  const set = new Set([myName()]);
+  for (const t of state.tasks || []) { set.add(t.assignee); set.add(t.by); }
+  for (const r of state.regs) { set.add(r.data?.skover); set.add(r.data?.udkoerer); }
+  return [...set].map(s => (s || "").trim()).filter(Boolean).sort((a, b) => a.localeCompare(b, "da"));
+}
+function updateTaskBadge() {
+  const b = $("#btnTasks"); if (!b) return;
+  const n = openTasks().filter(isMine).length;
+  b.dataset.n = n || ""; b.title = n ? `${n} åbne opgaver til dig` : "Opgaver";
+}
+let taskLayer = null;
+function taskPoint(t) {
+  if (t.lat) return [t.lat, t.lon];
+  const f = t.stand && standProps(t.stand.key) && state.data.layers.skovafdelinger.features.find(x => standKey(x.properties) === t.stand.key);
+  if (!f) return null; const c = standTarget(f); return [c.lat, c.lng];
+}
+function drawTaskMarkers() {
+  if (taskLayer) map.removeLayer(taskLayer); taskLayer = null;
+  if (!state.data) return;
+  taskLayer = L.layerGroup(openTasks().map(t => [t, taskPoint(t)]).filter(([, p]) => p).map(([t, p]) =>
+    L.marker(p, { icon: L.divIcon({ className: "", html: `<div class="task-pin${isMine(t) ? " mine" : ""}${t.due && t.due < todayIso() ? " late" : ""}">⚑</div>`, iconSize: [26, 26], iconAnchor: [-6, 30] }) })
+      .on("click", () => taskForm(t)))).addTo(map);
+}
+function taskLine(t) {
+  const late = t.due && t.due < todayIso() && t.status !== "udført";
+  const due = t.due ? new Date(t.due + "T12:00").toLocaleDateString("da-DK", { day: "numeric", month: "short" }) : "";
+  const who = t.assignee ? (sameName(t.assignee, myName()) ? "til dig" : "til " + esc(t.assignee)) : "ikke tildelt";
+  return `<li data-task="${esc(t.id)}" class="task${t.status === "udført" ? " done" : ""}">
+    <button class="tick" data-tick="${esc(t.id)}" aria-label="${t.status === "udført" ? "Genåbn" : "Udført"}">${t.status === "udført" ? "✓" : ""}</button>
+    <div class="grow"><b>${esc(t.title)}</b><br><span class="muted small">${[t.stand ? "litra " + esc(t.stand.label) : "", who,
+      t.by && !sameName(t.by, myName()) ? "fra " + esc(t.by) : "", due ? `<span class="${late ? "late" : ""}">frist ${due}</span>` : ""].filter(Boolean).join(" · ")}</span></div></li>`;
+}
+function taskList(tab = "mine") {
+  if (!state.data) return toast("Åbn et skovkort først");
+  if (state.selected) { state.selected = null; restyle(); }
+  const all = (state.tasks || []).filter(t => !t.deleted);
+  const sets = { mine: openTasks().filter(isMine), alle: openTasks(), udfoert: all.filter(t => t.status === "udført") };
+  const sort = a => [...a].sort((x, y) => (x.due || "9999").localeCompare(y.due || "9999") || y.updated.localeCompare(x.updated));
+  const list = tab === "udfoert" ? [...sets.udfoert].sort((x, y) => (y.doneAt || "").localeCompare(x.doneAt || "")) : sort(sets[tab]);
+  openSheet(`<div class="head"><h3>Opgaver</h3><button class="close">Luk</button></div>
+    <div class="seg" id="tTabs">${[["mine", "Mine"], ["alle", "Alle åbne"], ["udfoert", "Udført"]].map(([k, l]) => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${l} (${sets[k].length})</button>`).join("")}</div>
+    <button class="primary big" id="tNew">+ Ny opgave</button>
+    ${list.length ? `<ul class="list tasks">${list.map(taskLine).join("")}</ul>` : `<p class="muted">${tab === "mine" ? "Ingen åbne opgaver til dig." : tab === "alle" ? "Ingen åbne opgaver." : "Ingen udførte opgaver endnu."}</p>`}
+    <p class="muted small">Du er <b>${esc(myName() || "ikke navngivet")}</b> · <button class="linklike" id="tName">skift navn</button>${state.taskSyncNote ? `<br>${esc(state.taskSyncNote)}` : ""}</p>`);
+  $("#tTabs").onclick = e => { const b = e.target.closest("[data-tab]"); if (b) taskList(b.dataset.tab); };
+  $("#tNew").onclick = () => taskForm(null);
+  $("#tName").onclick = () => { askName(true); taskList(tab); };
+  sheet.querySelector(".tasks")?.addEventListener("click", async e => {
+    const tick = e.target.closest("[data-tick]");
+    if (tick) { const t = state.tasks.find(x => x.id === tick.dataset.tick); await toggleDone(t); return taskList(tab); }
+    const li = e.target.closest("[data-task]"); if (li) taskForm(state.tasks.find(x => x.id === li.dataset.task), tab);
+  });
+}
+async function toggleDone(t) {
+  const done = t.status !== "udført";
+  await putTask({ ...t, status: done ? "udført" : "åben", doneAt: done ? new Date().toISOString() : null, doneBy: done ? myName() || null : null });
+  if (navigator.vibrate) navigator.vibrate(30);
+  toast(done ? "Udført ✓" : "Opgaven er åben igen");
+}
+function taskForm(t, back) {
+  const isNew = !t;
+  if (isNew && !askName()) return toast("Skriv dit navn for at lave en opgave");
+  const here = state.me ? standAt(state.me.lon, state.me.lat) : null, sel = state.selected || here;
+  t = t ? { ...t } : { id: uid(), title: "", note: "", assignee: "", by: myName(), due: "", status: "åben", created: new Date().toISOString(),
+    stand: sel ? { key: standKey(sel.properties), label: standLabel(sel.properties) } : null };
+  const stands = [...new Map(state.data.layers.skovafdelinger.features.map(f => [standKey(f.properties), standLabel(f.properties)])).entries()]
+    .sort((a, b) => a[1].localeCompare(b[1], "da", { numeric: true }));
+  openSheet(`<div class="head"><h3>${isNew ? "Ny opgave" : "Opgave"}</h3><button class="close" id="tBack">${isNew ? "Annullér" : "Luk"}</button></div>
+    <label>Hvad skal gøres?</label><input id="tTitle" value="${esc(t.title)}" placeholder="Fx ryd vindfald ved vejen">
+    <div class="row"><div><label>Til</label><input id="tWho" list="dlWho" value="${esc(t.assignee)}" placeholder="${esc(myName() || "navn")}"><datalist id="dlWho">${taskNames().map(n => `<option>${esc(n)}</option>`).join("")}</datalist></div>
+      <div><label>Frist</label><input id="tDue" type="date" value="${esc(t.due || "")}"></div></div>
+    <div class="who-quick">${taskNames().slice(0, 6).map(n => `<button type="button" data-who="${esc(n)}">${sameName(n, myName()) ? "Mig" : esc(n)}</button>`).join("")}</div>
+    <label>Litra</label><select id="tStand"><option value="">Ingen litra</option>${stands.map(([k, l]) => `<option value="${esc(k)}"${t.stand?.key === k ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>
+    <label class="check"><input type="checkbox" id="tHere"${t.lat ? " checked" : ""}${state.me ? "" : " disabled"}> Sæt opgaven på kortet, hvor jeg står${state.me ? "" : " (venter på GPS)"}</label>
+    <label>Beskrivelse</label><textarea id="tNote">${esc(t.note || "")}</textarea>
+    ${isNew ? "" : `<p class="muted small">Lavet af ${esc(t.by || "?")} ${new Date(t.created).toLocaleDateString("da-DK")}${t.status === "udført" ? ` · udført${t.doneBy ? " af " + esc(t.doneBy) : ""} ${new Date(t.doneAt).toLocaleDateString("da-DK")}` : ""}</p>`}
+    <div class="stack"><button class="primary big" id="tSave">${isNew ? "Gem opgave" : "Gem ændringer"}</button>
+      ${isNew ? "" : `<button class="big" id="tDone">${t.status === "udført" ? "↺ Åbn igen" : "✓ Udført"}</button>`}
+      ${isNew || !taskPoint(t) ? "" : '<button id="tGo">➜ Gå hertil</button>'}
+      ${isNew ? "" : '<button class="danger" id="tDel">Slet</button>'}</div>`, true);
+  if (isNew) $("#tTitle").focus();
+  const leave = () => back ? taskList(back) : closeSheet();
+  $("#tBack").onclick = e => { e.stopPropagation(); leave(); };
+  sheet.querySelector(".who-quick").onclick = e => { const b = e.target.closest("[data-who]"); if (b) $("#tWho").value = b.dataset.who; };
+  const collect = () => {
+    const k = $("#tStand").value, lbl = stands.find(s => s[0] === k)?.[1];
+    const out = { ...t, title: $("#tTitle").value.trim(), assignee: $("#tWho").value.trim(), due: $("#tDue").value || "", note: $("#tNote").value.trim(), stand: k ? { key: k, label: lbl } : null };
+    if ($("#tHere").checked && state.me) { if (!t.lat || isNew) Object.assign(out, { lat: +state.me.lat.toFixed(6), lon: +state.me.lon.toFixed(6) }); }
+    else { delete out.lat; delete out.lon; }
+    return out;
+  };
+  $("#tSave").onclick = async () => {
+    const n = collect(); if (!n.title) return toast("Skriv, hvad der skal gøres");
+    await putTask(n); toast(isNew ? (n.assignee && !sameName(n.assignee, myName()) ? `Opgaven er givet til ${n.assignee}` : "Opgaven er gemt") : "Gemt"); leave();
+  };
+  if ($("#tDone")) $("#tDone").onclick = async () => { await toggleDone(collect()); leave(); };
+  if ($("#tGo")) $("#tGo").onclick = () => { const p = taskPoint(t); closeSheet(); goTo(p[0], p[1], t.title); };
+  if ($("#tDel")) $("#tDel").onclick = async () => { if (!confirm("Slet opgaven for alle?")) return; await putTask({ ...t, deleted: true }); toast("Opgaven er slettet"); leave(); };
+}
+/* Del opgaverne med de andre telefoner: send egne ændringer, hent alles. */
+let taskSyncing = false;
+async function syncTasks() {
+  const c = syncCfg(); if (!c || !state.data || taskSyncing || !navigator.onLine) return;
+  taskSyncing = true; const id = state.data.id;
+  try {
+    for (const t of (state.tasks || []).filter(x => x.dirty)) {
+      const { dirty, ...clean } = t; await rpc("felt_opgave_gem", { p_noegle: c.noegle, p_opgave: clean });
+      t.dirty = false;
+    }
+    const remote = await rpc("felt_opgaver_hent", { p_noegle: c.noegle });
+    if (state.data?.id !== id) return;
+    const byId = new Map((state.tasks || []).map(t => [t.id, t])); let fresh = 0;
+    for (const r of remote || []) {
+      const l = byId.get(r.id);
+      if (l && (l.dirty || (l.updated || "") >= (r.updated || ""))) continue;
+      if (!l && !r.deleted && r.status !== "udført" && sameName(r.assignee, myName()) && !sameName(r.by, myName())) fresh++;
+      byId.set(r.id, { ...r, dirty: false });
+    }
+    state.tasks = [...byId.values()].filter(t => !(t.deleted && !t.dirty && Date.now() - Date.parse(t.updated) > 60 * 864e5));
+    state.taskSyncNote = ""; await storeTasks(); drawTaskMarkers(); updateTaskBadge();
+    if (fresh) toast(fresh === 1 ? "Du har fået en ny opgave" : `Du har fået ${fresh} nye opgaver`, 5000);
+  } catch (e) {
+    state.taskSyncNote = /felt_opgave|function|schema cache|404/i.test(e.message)
+      ? "Opgaverne ligger kun på denne telefon, indtil SkovPlan Felt-databasen er opdateret med opgaver."
+      : "Opgaverne kunne ikke deles lige nu (" + e.message + "). Prøver igen senere.";
+    await storeTasks();
+  } finally { taskSyncing = false; }
+}
+
 /* ------------------------------------------------------------------ online synkronisering
    Har feltpakken en «sync»-blok (Supabase), sendes registreringerne automatisk, når der er net:
    først nye fotos (ét ad gangen), derefter hele eksporten uden fotos som én zip. SkovPlan henter selv. */
@@ -1838,6 +2004,8 @@ const ACTIONS = {
   generalNote: () => newReg("note", true),
   goStand: () => { const f = state.selected; if (!f) return; const c = standTarget(f); closeSheet(); goTo(c.lat, c.lng, "Litra " + standLabel(f.properties)); },
   track: toggleTrack,
+  tasks: () => taskList(), newTask: () => taskForm(null),
+  openTask: el => { const t = (state.tasks || []).find(x => x.id === el.dataset.id); if (t) taskForm(t); },
   pileList: () => pileList(), newStak: () => newPile("stak"), newStok: () => newPile("stok"),
   packageLink: askPackageLink,
   chooseProperty: () => propertySheet(),
@@ -2170,6 +2338,7 @@ async function activateProperty(d, ortho) {
   await db.put("kv", d.id, "aktiv");
   state.regs = regsFor(d); state.syncHash = syncCfg() ? safeLS("syncHash:" + syncCfg().noegle) : null;
   drawData(); fitData(); setBasemap(state.ortho ? 0 : (state.basemap || 1)); drawRegMarkers(); restyle(); refreshMenuInfo();
+  await loadTasks(); syncTasks();
 }
 async function switchProperty(id) {
   if (state.data?.id === id) return closeSheet();
@@ -2293,16 +2462,16 @@ async function updateMap(d, base, version) {
   const saved = safeLS("basemap"); setBasemap(saved === null ? 0 : +saved % BASEMAPS.length);
   if (state.data) { drawData(); fitData(); }
   showWelcome();
-  drawRegMarkers(); startGps();
+  drawRegMarkers(); startGps(); loadTasks().then(syncTasks);
   const params = new URLSearchParams(location.search);
   const linked = packageUrlFrom(params.get("pakke") ? location.href : "");
   let customer = null; try { customer = params.get("kunde") ? new URL(params.get("kunde")).href : null; } catch (e) { /* ugyldigt */ }
   if (linked || customer) history.replaceState(null, "", location.pathname);
   if (customer) chooseProperty(customer); else if (linked) downloadPackage(linked);
   if (syncCfg()) { state.syncHash = safeLS("syncHash:" + syncCfg().noegle); scheduleSync(); }
-  setTimeout(checkMapUpdates, 4000); setInterval(checkMapUpdates, 10 * 60 * 1000);
-  window.addEventListener("online", () => checkMapUpdates());
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkMapUpdates(); });
+  setTimeout(checkMapUpdates, 4000); setInterval(checkMapUpdates, 10 * 60 * 1000); setInterval(syncTasks, 2 * 60 * 1000);
+  window.addEventListener("online", () => { checkMapUpdates(); syncTasks(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { checkMapUpdates(); syncTasks(); } });
   // Installér som app (Android/Chrome viser sin egen dialog; iPhone: Del › Føj til hjemmeskærm)
   const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
   window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); state.installPrompt = e; $("#btnInstall")?.classList.remove("hidden"); });
