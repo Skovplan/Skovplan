@@ -39,5 +39,11 @@ Appen kan også åbne `skovdriftsplan.gpkg` og `ortofoto_feltapp.mbtiles` hver f
 - **Entreprenørpakke** (Opgaver › Entreprenørpakke…, eller i SkovPlan: Opgaver til felten › Entreprenørpakke…): ét link `?entr=<kode>` pr. entreprenør og ejendom med kun de opgaver, der står i entreprenørens navn, og ejendommens pas-på-lag. Pakken gemmes på telefonen og virker uden net; nye opgaver til samme navn kommer selv med. Et enkelt opgavelink får også pas-på-lagene.
 - Kræver `skovplan_felt_paspaa.sql` i Supabase (én gang). Feltpakkens pas-på-lag lægges i databasen af SkovPlan og af skovfogedens telefon.
 
+## Projekter, liggeplads og arbejdskort (CLAUDE-1797)
+- SkovPlan lægger projektets opgaver i appen (højreklik › «Læg i feltappen»). Følgeopgaver som skovning, udkørsel og flis bliver egne opgaver til hver deres entreprenør, så hver maskinentreprenør ser sin del i sin entreprenørpakke. Opgaverne står samlet under projektet.
+- Liggepladsen fra opgaven vises på kortet (brunt «L») med «Vis» og «Kør hertil».
+- Arbejdskortet (PDF med kort) lægges på opgaverne, når det laves i SkovPlan. Knappen «📄 Arbejdskort (PDF)» henter det i stykker og gemmer det på telefonen. Entreprenørpakken henter arbejdskortene i baggrunden, så de kan åbnes uden net.
+- Kræver `skovplan_felt_arbejdskort.sql` i Supabase.
+
 ## Hosting
 GitHub Pages fra `main`. Alle biblioteker ligger i `lib/`, så intet hentes udefra ud over OpenStreetMap-fliser.

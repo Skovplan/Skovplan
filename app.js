@@ -2095,7 +2095,15 @@ function taskLine(t) {
   return `<li data-task="${esc(t.id)}" class="task${t.status === "udført" ? " done" : ""}">
     <button class="tick" data-tick="${esc(t.id)}" aria-label="${t.status === "udført" ? "Genåbn" : "Udført"}">${t.status === "udført" ? "✓" : ""}</button>
     <div class="grow"><b>${esc(t.title)}</b>${t.status && t.status !== "åben" && t.status !== "udført" ? " " + statusChip(t.status) : ""}<br><span class="muted small">${[t.stand ? "litra " + esc(t.stand.label) : "", who,
-      t.by && !sameName(t.by, myName()) ? "fra " + esc(t.by) : "", due ? `<span class="${late ? "late" : ""}">frist ${due}</span>` : ""].filter(Boolean).join(" · ")}</span></div></li>`;
+      t.by && !sameName(t.by, myName()) ? "fra " + esc(t.by) : "", due ? `<span class="${late ? "late" : ""}">frist ${due}</span>` : "", t.pdf ? "📄" : ""].filter(Boolean).join(" · ")}</span></div></li>`;
+}
+/* CLAUDE-1797: projekter fra SkovPlan. Opgaverne står samlet under projektet (fx afdrift med skovning, udkørsel og flis),
+   så hver entreprenør kan se sin del, og skovfogeden kan se hele projektet. */
+function byProject(list, line, cls) {
+  if (!list.some(t => t.projekt?.navn)) return `<ul class="${cls}">${list.map(line).join("")}</ul>`;
+  const groups = new Map();
+  for (const t of list) { const k = t.projekt?.id || ""; if (!groups.has(k)) groups.set(k, { navn: t.projekt?.navn || "", items: [] }); groups.get(k).items.push(t); }
+  return [...groups.values()].sort((a, b) => (!a.navn) - (!b.navn)).map(g => `<h4 class="phead">${g.navn ? "📁 " + esc(g.navn) : "Andre opgaver"}</h4><ul class="${cls}">${g.items.map(line).join("")}</ul>`).join("");
 }
 function taskList(tab = "mine") {
   if (!state.data) return toast("Åbn et skovkort først");
@@ -2109,18 +2117,18 @@ function taskList(tab = "mine") {
   openSheet(`<div class="head"><h3>Opgaver</h3><button class="close">Luk</button></div>
     <div class="seg" id="tTabs">${[["mine", "Mine"], ...(own ? [] : [["alle", "Alle åbne"]]), ["udfoert", "Udført"]].map(([k, l]) => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${l} (${sets[k].length})</button>`).join("")}</div>
     ${own ? "" : '<div class="row2"><button class="primary big" id="tNew">+ Ny opgave</button><button class="big" id="tCrew">Entreprenørpakke…</button></div>'}
-    ${list.length ? `<ul class="list tasks">${list.map(taskLine).join("")}</ul>` : `<p class="muted">${tab === "mine" ? "Ingen åbne opgaver til dig." : tab === "alle" ? "Ingen åbne opgaver." : "Ingen udførte opgaver endnu."}</p>`}
+    ${list.length ? byProject(list, taskLine, "list tasks") : `<p class="muted">${tab === "mine" ? "Ingen åbne opgaver til dig." : tab === "alle" ? "Ingen åbne opgaver." : "Ingen udførte opgaver endnu."}</p>`}
     ${own && !list.length && tab === "mine" ? `<p class="muted small">Opgaver, som skovfogeden giver til <b>${esc(myName() || "dit navn")}</b>, kommer her. Navnet skal stå på opgaven, som du har skrevet det her.</p>` : ""}
     <p class="muted small">Du er <b>${esc(myName() || "ikke navngivet")}</b>${roleName() ? " · " + roleName() : ""} · <button class="linklike" id="tName">skift navn</button>${state.taskSyncNote ? `<br>${esc(state.taskSyncNote)}` : ""}</p>`);
   $("#tTabs").onclick = e => { const b = e.target.closest("[data-tab]"); if (b) taskList(b.dataset.tab); };
   if ($("#tNew")) $("#tNew").onclick = () => taskForm(null);
   if ($("#tCrew")) $("#tCrew").onclick = crewPick;   // CLAUDE-1795
   $("#tName").onclick = () => { askName(true); taskList(tab); };
-  sheet.querySelector(".tasks")?.addEventListener("click", async e => {
+  sheet.querySelectorAll(".tasks").forEach(ul => ul.addEventListener("click", async e => {
     const tick = e.target.closest("[data-tick]");
     if (tick) { const t = state.tasks.find(x => x.id === tick.dataset.tick); await toggleDone(t); return taskList(tab); }
     const li = e.target.closest("[data-task]"); if (li) taskForm(state.tasks.find(x => x.id === li.dataset.task), tab);
-  });
+  }));
 }
 async function toggleDone(t) {
   const done = t.status !== "udført";
@@ -2145,6 +2153,7 @@ function taskForm(t, back) {
     <label>Litra</label><select id="tStand"><option value="">Ingen litra</option>${stands.map(([k, l]) => `<option value="${esc(k)}"${t.stand?.key === k ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>
     <label class="check"><input type="checkbox" id="tHere"${t.lat ? " checked" : ""}${state.me ? "" : " disabled"}> Sæt opgaven på kortet, hvor jeg står${state.me ? "" : " (venter på GPS)"}</label>
     <label>Beskrivelse</label><textarea id="tNote">${esc(t.note || "")}</textarea>
+    ${isNew ? "" : jobExtrasHtml(t)}
     ${isNew ? "" : `<p class="muted small">Lavet af ${esc(t.by || "?")} ${new Date(t.created).toLocaleDateString("da-DK")}${t.status === "udført" ? ` · udført${t.doneBy ? " af " + esc(t.doneBy) : ""} ${new Date(t.doneAt).toLocaleDateString("da-DK")}` : ""}</p>`}
     <div class="stack"><button class="primary big" id="tSave">${isNew ? "Gem opgave" : "Gem ændringer"}</button>
       ${isNew ? "" : `<button class="big" id="tDone">${t.status === "udført" ? "↺ Åbn igen" : "✓ Udført"}</button>`}
@@ -2153,6 +2162,7 @@ function taskForm(t, back) {
       ${isNew ? "" : '<button class="danger" id="tDel">Slet</button>'}</div>`, true);
   if (!isNew && t.log?.length) sheet.querySelector(".head").insertAdjacentHTML("afterend", taskLogHtml(t));   // meldingerne øverst
   if (!isNew && t.log?.length && syncCfg()) hydrateTaskPhotos(ownerFoto);
+  if (!isNew) wireJobExtras(t, ownerPdf(t), () => closeSheet());
   if (isNew) $("#tTitle").focus();
   const leave = () => back ? taskList(back) : closeSheet();
   $("#tBack").onclick = e => { e.stopPropagation(); leave(); };
@@ -2278,7 +2288,8 @@ async function openJob(token, db64, crewToken) {
   if (job.task) drawJob();
   await flushQueue();
   try { const t = await jobRpc("felt_opgave_aaben", { p_token: token }); if (!t) throw new Error("Opgaven findes ikke længere eller er slettet");
-    job.task = t; rememberLink({ token, db: db64, title: t.title, ejendom: t.ejendom, task: t, crew: job.crew }); }
+    job.task = t; rememberLink({ token, db: db64, title: t.title, ejendom: t.ejendom, task: t, crew: job.crew });
+    if (t.pdf?.fil) getPdf(t.pdf, tokenPdf(dbc, token)).catch(() => {}); }   // CLAUDE-1797: klar uden net
   catch (e) { if (!job.task) { openSheet(`<div class="head"><h3>Opgave</h3></div><p>${esc(/Failed to fetch/.test(e.message) ? "Ingen forbindelse. Prøv igen, når der er net." : e.message)}</p>`); return; } }
   if (!job.crew) jobRpc("felt_opgave_paspaa", { p_token: token }).then(d => {
     if (!d?.lag || job?.token !== token) return;
@@ -2302,6 +2313,7 @@ function drawJobMap(fit) {
   drawPasLayers(jobLayer, state.jobPas);
   if (t.omraade) L.geoJSON(t.omraade, { style: { color: "#e8710a", weight: 3, fillOpacity: 0.15 }, interactive: false }).addTo(jobLayer);
   if (t.punkt) L.marker(t.punkt, { icon: L.divIcon({ className: "", html: '<div class="task-pin mine">⚑</div>', iconSize: [26, 26], iconAnchor: [-6, 30] }) }).addTo(jobLayer);
+  drawLiggepladser(jobLayer, [t]);
   if (fit) { try { const b = L.geoJSON(t.omraade || { type: "Point", coordinates: [t.punkt[1], t.punkt[0]] }).getBounds(); map.fitBounds(b, { padding: [30, 30], maxZoom: 17 }); } catch (e) { /* intet sted */ } }
 }
 /* Hensyn ved opgaven: inden for 300 m af området eller punktet. */
@@ -2318,11 +2330,12 @@ function drawJob(fit) {
   const late = t.due && t.due < todayIso() && t.status !== "udført";
   const queued = JSON.parse(safeLS(QUEUE_KEY) || "[]").filter(q => q.token === job.token).length;
   openSheet(`<div class="head"><h3>${esc(t.title)}</h3><button class="close" id="jHide">Kort</button></div>
-    <p>${statusChip(t.status)} <span class="muted">${esc(t.ejendom || t.ejendomNavn || "")}${t.stand ? " · litra " + esc(t.stand.label) : ""}</span>
+    <p>${statusChip(t.status)} <span class="muted">${esc(t.ejendom || t.ejendomNavn || "")}${t.stand ? " · litra " + esc(t.stand.label) : ""}${t.projekt?.navn ? " · 📁 " + esc(t.projekt.navn) : ""}</span>
       ${t.due ? `<br><span class="${late ? "late" : ""}">Frist ${new Date(t.due + "T12:00").toLocaleDateString("da-DK", { weekday: "long", day: "numeric", month: "long" })}</span>` : ""}
       ${t.by ? `<br><span class="muted small">Fra ${esc(t.by)}</span>` : ""}</p>
     ${t.note ? `<div class="jnote">${esc(t.note).replace(/\n/g, "<br>")}</div>` : ""}
     ${t.punkt ? `<div class="actions"><button data-jgo>➜ Vis vej i appen</button><a class="btn" href="https://www.google.com/maps/dir/?api=1&destination=${t.punkt[0]},${t.punkt[1]}" target="_blank" rel="noopener">Google Maps</a></div>` : ""}
+    ${jobExtrasHtml(t)}
     ${queued ? `<p class="warn">${queued} melding${queued === 1 ? "" : "er"} sendes, når der er net.</p>` : ""}
     <button class="pasline ${red ? "lvl2" : pn.length ? "lvl1" : ""}" id="jPas">⚠ ${pn.length ? `Pas på: ${pn.length} hensyn ved opgaven${red ? ` (${red} må ikke røres)` : ""}` : "Pas på: ingen kendte hensyn ved opgaven"}${pasCfg().on ? "" : " · advarsler er slået fra"}</button>
     ${notifyBtn()}
@@ -2344,6 +2357,69 @@ function drawJob(fit) {
   sheet.querySelector("[data-jgo]")?.addEventListener("click", () => { closeSheet(); jobChip(); goTo(t.punkt[0], t.punkt[1], t.title); });
   sheet.querySelector(".jbtns").onclick = e => { const b = e.target.closest("[data-meld]"); if (b) meldForm(b.dataset.meld); };
   hydrateTaskPhotos(navn => jobRpc("felt_opgave_foto", { p_token: job.token, p_navn: navn }));
+  wireJobExtras(t, tokenPdf(job.db, job.token), () => { closeSheet(); jobChip(); });
+}
+/* ---------- CLAUDE-1797: arbejdskort (PDF) og liggepladser fra SkovPlan
+   SkovPlan lægger arbejdskortet på opgaven ({pdf: {fil, titel, kb}}) og liggepladserne ({liggepladser: [{navn, lat, lon}]}).
+   PDF'en hentes i stykker og gemmes på telefonen, så den kan åbnes uden net, når den er hentet én gang. */
+function jobExtrasHtml(t) {
+  const lp = (t.liggepladser || []).filter(p => p && isFinite(p.lat) && isFinite(p.lon));
+  return `${lp.map((p, i) => `<div class="lpline"><span class="lp-pin">L</span><div class="grow"><b>${/^liggeplads/i.test(p.navn || "") ? esc(p.navn) : "Liggeplads: " + esc(p.navn || "")}</b></div>
+      <button data-lpvis="${i}">Vis</button><a class="btn" href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lon}" target="_blank" rel="noopener">Kør hertil</a></div>`).join("")}
+    ${t.pdf?.fil ? `<button class="big pdfbtn" data-pdf>📄 Arbejdskort (PDF)${t.pdf.kb ? ` · ${t.pdf.kb >= 1024 ? (t.pdf.kb / 1024).toFixed(1).replace(".", ",") + " MB" : t.pdf.kb + " kB"}` : ""}<span class="pdfstate muted small"></span></button>` : ""}`;
+}
+function wireJobExtras(t, fetchPart, beforeShow) {
+  const lp = (t.liggepladser || []).filter(p => p && isFinite(p.lat) && isFinite(p.lon));
+  sheet.querySelectorAll("[data-lpvis]").forEach(b => b.onclick = () => { const p = lp[+b.dataset.lpvis]; beforeShow(); map.setView([p.lat, p.lon], 17); });
+  const pb = sheet.querySelector("[data-pdf]"); if (!pb || !t.pdf?.fil) return;
+  const st = pb.querySelector(".pdfstate");
+  db.get("kv", "pdf:" + t.pdf.fil).then(b => { if (b && st) st.textContent = " · gemt på telefonen"; }).catch(() => {});
+  pb.onclick = async () => {
+    if (pb.disabled) return; pb.disabled = true;
+    try { const blob = await getPdf(t.pdf, fetchPart, (n, m) => { if (st) st.textContent = ` · henter ${n}/${m}`; }); if (st) st.textContent = " · gemt på telefonen"; showPdf(blob, t.pdf.titel || t.title); }
+    catch (e) { if (st) st.textContent = ""; toast(/Failed to fetch|NetworkError/.test(e.message) ? "Arbejdskortet hentes første gang, når der er net" : "Arbejdskortet kunne ikke hentes: " + e.message, 6000); }
+    finally { pb.disabled = false; }
+  };
+}
+async function getPdf(pdf, fetchPart, progress) {
+  const key = "pdf:" + pdf.fil, have = await db.get("kv", key).catch(() => null);
+  if (have) return have;
+  const parts = []; let dele = 1;
+  for (let n = 0; n < dele; n++) {
+    if (progress && dele > 1) progress(n + 1, dele);
+    const r = await fetchPart(n); if (!r?.data && r?.data !== "") throw new Error("arbejdskortet findes ikke længere");
+    dele = r.dele || 1; const bin = atob(r.data), u = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    parts.push(u);
+  }
+  const blob = new Blob(parts, { type: "application/pdf" });
+  await db.put("kv", blob, key).catch(() => {});
+  return blob;
+}
+function showPdf(blob, title) {
+  const url = URL.createObjectURL(blob), a = document.createElement("a");
+  a.href = url; a.rel = "noopener";
+  if (/iPhone|iPad|iPod/.test(navigator.userAgent)) a.target = "_blank"; else a.download = (String(title || "Arbejdskort").replace(/[\\/:*?"<>|]+/g, "-").slice(0, 80) || "Arbejdskort") + ".pdf";
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 120000);
+}
+const tokenPdf = (dbc, token) => n => linkRpc(dbc, "felt_opgave_pdf", { p_token: token, p_nr: n });
+const ownerPdf = t => n => rpc("felt_pdf_hent", { p_noegle: syncCfg().noegle, p_fil: t.pdf.fil, p_nr: n });
+function drawLiggepladser(group, tasks) {
+  const seen = new Set();
+  for (const t of tasks) for (const p of t.liggepladser || []) {
+    if (!p || !isFinite(p.lat) || !isFinite(p.lon) || seen.has(p.navn + p.lat)) continue; seen.add(p.navn + p.lat);
+    L.marker([p.lat, p.lon], { icon: L.divIcon({ className: "", html: '<div class="lp-pin">L</div>', iconSize: [24, 24], iconAnchor: [12, 12] }) })
+      .bindTooltip(/^liggeplads/i.test(p.navn || "") ? p.navn : "Liggeplads: " + (p.navn || ""), { direction: "top", offset: [0, -10] }).addTo(group);
+  }
+}
+/* Entreprenørpakken: hent arbejdskortene til de åbne opgaver i baggrunden, så de kan åbnes ude i skoven uden net. */
+async function prefetchCrewPdfs() {
+  if (!crew || !navigator.onLine) return; const token = crew.token;
+  for (const t of crewTasks().filter(t => t.pdf?.fil && t.status !== "udført")) {
+    if (crew?.token !== token) return;
+    try { await getPdf(t.pdf, tokenPdf(crew.db, t.token)); } catch (e) { /* prøv igen næste gang */ }
+  }
 }
 function jobChip() { const b = $("#jobChip"); b.classList.remove("hidden"); b.onclick = () => { b.classList.add("hidden"); drawJob(); }; }
 function meldForm(type) {
@@ -2430,6 +2506,7 @@ async function openCrew(token, db64) {
     if (!pkg) throw new Error("Linket virker ikke længere. Bed skovfogeden om et nyt.");
     if (crew?.token !== token) return;
     crew.pkg = pkg; await db.put("kv", pkg, "entr:" + token).catch(() => {});
+    setTimeout(prefetchCrewPdfs, 1500);   // CLAUDE-1797
     rememberCrew({ token, db: db64, ejendom: pkg.ejendom, navn: pkg.navn, n: (pkg.opgaver || []).length });
     applyCrew();
   } catch (e) {
@@ -2461,15 +2538,16 @@ function drawCrew(fit) {
     if (t.punkt) { L.marker(t.punkt, { icon: L.divIcon({ className: "", html: `<div class="task-pin ${doneT ? "done" : "mine"}">${i + 1}</div>`, iconSize: [26, 26], iconAnchor: [-6, 30] }) })
       .on("click", () => openJob(t.token, crew.db64, crew.token)).addTo(crewLayer); bounds.extend(t.punkt); }
   });
+  drawLiggepladser(crewLayer, open);
   if (fit && bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 });
   const nr = t => tasks.indexOf(t) + 1;
   const line = t => { const late = t.due && t.due < todayIso() && t.status !== "udført", pn = jobPasNear(t).filter(h => h.def.pas.lvl > 1).length;
     return `<li data-crew="${esc(t.token)}"><div class="task-pin small ${t.status === "udført" ? "done" : "mine"}">${nr(t)}</div><div class="grow"><b>${esc(t.title || "Opgave")}</b> ${statusChip(t.status)}
-      <br><span class="muted small">${t.stand ? "Litra " + esc(t.stand.label) + " · " : ""}${t.due ? `<span class="${late ? "late" : ""}">frist ${new Date(t.due + "T12:00").toLocaleDateString("da-DK", { day: "numeric", month: "short" })}</span>` : "ingen frist"}${pn ? ` · <span class="late">⚠ ${pn} pas-på</span>` : ""}</span></div></li>`; };
+      <br><span class="muted small">${t.stand ? "Litra " + esc(t.stand.label) + " · " : ""}${t.due ? `<span class="${late ? "late" : ""}">frist ${new Date(t.due + "T12:00").toLocaleDateString("da-DK", { day: "numeric", month: "short" })}</span>` : "ingen frist"}${pn ? ` · <span class="late">⚠ ${pn} pas-på</span>` : ""}${t.pdf ? " · 📄" : ""}${t.liggepladser?.length ? " · L" : ""}</span></div></li>`; };
   const items = pasItems().length, hentet = crew.pkg.hentet ? new Date(crew.pkg.hentet).toLocaleString("da-DK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
   openSheet(`<div class="head"><h3>Opgaver til ${esc(crew.pkg.navn || myName() || "dig")}</h3><button class="close" id="cHide">Kort</button></div>
     <p class="muted">${esc(crew.pkg.ejendom || "")}${hentet ? " · hentet " + hentet : ""}${navigator.onLine ? "" : " · uden net: viser det, der er gemt"}</p>
-    ${open.length ? `<ul class="list tasks crew">${open.map(line).join("")}</ul>` : '<p class="muted">Ingen åbne opgaver til dig lige nu.</p>'}
+    ${open.length ? byProject(open, line, "list tasks crew") : '<p class="muted">Ingen åbne opgaver til dig lige nu.</p>'}
     ${done.length ? `<h4>Færdige</h4><ul class="list tasks crew">${done.map(line).join("")}</ul>` : ""}
     <button class="pasline ${items ? "lvl1" : ""}" id="cPas">⚠ ${items ? `Pas på: ${items} hensyn på ejendommen. Telefonen advarer, når du kommer tæt på.` : "Pakken har ingen pas-på-lag endnu."}</button>
     ${notifyBtn()}
