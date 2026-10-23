@@ -19,15 +19,45 @@ const LAYERS = {
   indgange: { style: { color: "#7a5230", radius: 5 } },
   aflaegningspladser: { style: { color: "#5b3a17", fillColor: "#f2c14e", fillOpacity: 1, weight: 2, radius: 7 } },
 };
-/* Lokale hensyn fra feltpakken (feltlag.json): navn i menuen «Vis lag», stil og evt. tekst ved klik. */
+/* Lokale hensyn fra feltpakken (feltlag.json): navn i menuen «Vis lag», stil og evt. tekst ved klik.
+   CLAUDE-1795: «pas» gør laget til et pas-på-lag: appen advarer, når GPS-positionen kommer inden for r meter
+   (r = 0: kun inde i området). lvl 2 = rød (må ikke røres uden dispensation), 1 = gul (kontrollér). Typerne er de samme
+   som SkovPlans Pas på-kort og screening: §3, vandløb, Natura 2000, fredninger, fortidsminder, diger, egekrat,
+   klitfredning, HNV, jagtanlæg og egne lag, der er markeret som pas-på i SkovPlan. */
 const EXTRA = {
   naturtyper: { name: "§3-naturtyper", style: { color: "#0a8f5a", weight: 2, dashArray: "6 3", fillColor: "#0a8f5a", fillOpacity: 0.14 },
-    label: p => "§3 " + (p.Natyp_navn || "natur") },
+    label: p => "§3 " + (p.Natyp_navn || "natur"),
+    pas: { r: 15, lvl: 2, what: p => "§3-natur" + (p.Natyp_navn ? " (" + String(p.Natyp_navn).toLowerCase() + ")" : ""), why: "Ingen kørsel, oplag eller hugst uden dispensation." } },
+  vandloeb: { name: "Beskyttede vandløb", style: { color: "#1565c0", weight: 3.5 },
+    info: p => "Beskyttet vandløb" + (p.navn ? ": " + p.navn : ""),
+    pas: { r: 20, lvl: 2, what: () => "Beskyttet vandløb", why: "Kryds kun ved en eksisterende overkørsel. Ingen stakke ned til vandløbet." } },
   diger: { name: "Beskyttede diger", style: { color: "#6b4f2a", weight: 3.5, dashArray: "2 5", lineCap: "round" },
-    info: p => "Beskyttet dige" + (p.Digetypebeskrivelse ? ": " + p.Digetypebeskrivelse : "") + (p.Stendige ? " (stendige)" : "") },
-  fortidsminde_zoner: { name: "Fortidsminders beskyttelseszone", style: { color: "#8a3ffc", weight: 1.5, dashArray: "4 4", fill: false } },
+    info: p => "Beskyttet dige" + (p.Digetypebeskrivelse ? ": " + p.Digetypebeskrivelse : "") + (p.Stendige ? " (stendige)" : ""),
+    pas: { r: 15, lvl: 2, what: p => p.Stendige ? "Beskyttet stendige" : "Beskyttet dige", why: "Kør ikke over diget, og læg ikke stakke op ad det." } },
+  fortidsminde_zoner: { name: "Fortidsminders beskyttelseszone", style: { color: "#8a3ffc", weight: 1.5, dashArray: "4 4", fill: false },
+    pas: { r: 0, lvl: 1, what: () => "Fortidsmindets beskyttelseslinje", why: "Ingen dybe spor, jordarbejde eller oplag." } },
   fortidsminder: { name: "Fortidsminder", style: { color: "#fff", weight: 2, fillColor: "#8a3ffc", fillOpacity: 1, radius: 7 },
-    info: p => "Fortidsminde: " + [p.anlaegstype, p.datering, p.frednr ? "fredningsnr. " + p.frednr : ""].filter(Boolean).join(" · ") },
+    info: p => "Fortidsminde: " + [p.anlaegstype, p.datering, p.frednr ? "fredningsnr. " + p.frednr : ""].filter(Boolean).join(" · "),
+    pas: { r: 30, lvl: 2, what: p => "Fortidsminde" + (p.anlaegstype ? " (" + String(p.anlaegstype).toLowerCase() + ")" : ""), why: "Hold mindst 2 m fri. Ingen kørsel, fældning ind over eller oplag." } },
+  egekrat: { name: "Bevaringsværdige egekrat", style: { color: "#65750f", weight: 1.5, fillColor: "#65750f", fillOpacity: 0.18 },
+    info: () => "Bevaringsværdigt egekrat",
+    pas: { r: 10, lvl: 2, what: () => "Bevaringsværdigt egekrat", why: "Krattet må ikke ryddes." } },
+  fredninger: { name: "Fredninger", style: { color: "#6a1b9a", weight: 1.5, fillColor: "#6a1b9a", fillOpacity: 0.08 },
+    info: p => "Fredning" + (p.navn ? ": " + p.navn : ""),
+    pas: { r: 0, lvl: 1, what: p => "Fredet område" + (p.navn ? " (" + p.navn + ")" : ""), why: "Fredningen kan forbyde afdrift, nye spor m.m. Følg aftalen med skovfogeden." } },
+  natura2000: { name: "Natura 2000", style: { color: "#1e5ec4", weight: 1.5, dashArray: "8 4", fill: false },
+    info: p => (p.type || "Natura 2000") + (p.navn ? ": " + p.navn : ""),
+    pas: { r: 0, lvl: 1, what: p => p.type || "Natura 2000", why: "Følg aftalen for området. Ændret drift skal være anmeldt." } },
+  klitfredning: { name: "Klitfredning", style: { color: "#a16207", weight: 1.5, fillColor: "#ca8a04", fillOpacity: 0.12 },
+    pas: { r: 0, lvl: 1, what: () => "Klitfredet område", why: "Tilstanden må ikke ændres uden dispensation." } },
+  hnv: { name: "Høj naturværdi (HNV)", style: { color: "#b45309", weight: 1, fillColor: "#d97706", fillOpacity: 0.12 },
+    pas: { r: 0, lvl: 1, what: () => "Areal med høj naturværdi", why: "Undgå køreskader og oplag." } },
+  jagt: { name: "Jagtanlæg", style: { color: "#fff", weight: 2, fillColor: "#b45309", fillOpacity: 1, radius: 6 },
+    info: p => [p.type || "Jagtanlæg", p.navn].filter(Boolean).join(": "),
+    pas: { r: 30, lvl: 1, what: p => [p.type || "Jagtanlæg", p.navn].filter(Boolean).join(" "), why: "Kør udenom, og læg ikke grene eller stakke ved anlægget." } },
+  egne: { name: "Egne hensyn", style: { color: "#d81b60", weight: 2.5, fillColor: "#d81b60", fillOpacity: 0.15, radius: 7 },
+    info: p => [p._lag, p._tekst].filter(Boolean).join(": ") || "Hensyn",
+    pas: { r: 20, lvl: 2, what: p => p._tekst || p._lag || "Hensyn", why: p => p._lag && p._tekst ? p._lag : "Markeret som pas-på i SkovPlan." } },
 };
 const STAND_FIELDS = ["compartment_id", "navn", "afdeling", "afdeling_nr", "litra", "træart", "etableringsaar",
   "alder", "middelhoejde_m", "middeldiameter_cm", "stamtal_ha", "grundflade_m2_ha", "vedmasse_m3_ha",
@@ -446,8 +476,8 @@ function drawData() {
   state.extraLabels = [];
   for (const [key, def] of Object.entries(EXTRA)) {
     if (!extra[key] || hidden.has(key)) continue;
-    const lyr = L.geoJSON(extra[key], {
-      style: () => def.style, interactive: !!def.info,
+    const lyr = L.geoJSON(extra[key], {   // CLAUDE-1795: flader tager ikke klik fra litraerne
+      style: f => ({ ...def.style, interactive: !!def.info && !/Polygon/.test(f.geometry?.type || "") }),
       pointToLayer: (f, ll) => L.circleMarker(ll, def.style),
       onEachFeature: (f, l) => {
         if (def.info) l.bindPopup(esc(def.info(f.properties)));
@@ -536,12 +566,16 @@ function startGps() {
       meMarker = L.marker([lat, lon], { icon: L.divIcon({ className: "", html: '<div class="me-dot"></div>', iconSize: [18, 18] }), interactive: false }).addTo(map);
       meCircle = L.circle([lat, lon], { radius: accuracy, color: "#1a73e8", weight: 1, fillOpacity: 0.08, interactive: false }).addTo(map);
     } else { meMarker.setLatLng([lat, lon]); meCircle.setLatLng([lat, lon]).setRadius(accuracy); }
+    const gq = gpsClass(accuracy);   // CLAUDE-1795: præcisionen med farve
+    meCircle.setStyle({ color: GPS_COLOR[gq], fillColor: GPS_COLOR[gq] });
+    const chip = $("#gpsChip"); chip.className = gq; chip.textContent = `GPS ±${Math.round(accuracy)} m`;
     const km = kmFromForest(lat, lon);
     if (follow && km <= 1) map.setView([lat, lon], Math.max(map.getZoom(), 16));
     const st = standAt(lon, lat);
     $("#where").textContent = km > 1 ? `${state.data?.name || ""} · du er ${fmt(km, km < 10 ? 1 : 0)} km væk`
       : (st ? `Du står i ${standLabel(st.properties)} · ` : "") + `±${Math.round(accuracy)} m`;
     trackPoint(lat, lon, accuracy, pos.timestamp); remindStand(lat, lon, accuracy); updateNav();
+    pasCheck();   // CLAUDE-1795
   }, err => toast("GPS er ikke tilgængelig" + (err.message ? ": " + err.message : "")), { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
 }
 function inRing(x, y, ring) {
@@ -568,6 +602,170 @@ function kmFromForest(lat, lon) {
   const near = L.latLng(Math.min(Math.max(lat, b.getSouth()), b.getNorth()), Math.min(Math.max(lon, b.getWest()), b.getEast()));
   return map.distance(L.latLng(lat, lon), near) / 1000;
 }
+/* ------------------------------------------------------------------ pas på (CLAUDE-1795)
+   Advarsel, når man nærmer sig et hensyn. Lagene kommer fra feltpakken (skovfoged/egen feltpakke) eller fra
+   entreprenørens opgavelink/pakke. Alt regnes på telefonen, så det virker uden net. */
+const PAS_KEY = "pasPaa";
+const PAS_SCALE = { kort: 0.6, normal: 1, lang: 2 };
+function pasCfg() { let c = {}; try { c = JSON.parse(safeLS(PAS_KEY) || "{}") || {}; } catch (e) { /* standard */ } return { on: c.on === undefined ? isContractor() : c.on !== false, afstand: PAS_SCALE[c.afstand] ? c.afstand : "normal" }; }
+function setPasCfg(ch) { safeLS(PAS_KEY, JSON.stringify({ ...pasCfg(), ...ch })); }
+const pasText = (v, p) => typeof v === "function" ? v(p || {}) : v || "";
+/* Det lag, der gælder nu: entreprenørens (opgave/pakke) eller feltpakkens. */
+function pasSource() { return document.body.classList.contains("jobmode") ? state.jobPas || null : state.data?.extra?.lag || null; }
+const pasPrepared = new WeakMap();
+function pasItems() {
+  const src = pasSource(); if (!src) return [];
+  if (pasPrepared.has(src)) return pasPrepared.get(src);
+  const items = [];
+  for (const [key, fc] of Object.entries(src)) {
+    const def = EXTRA[key]; if (!def?.pas || !fc?.features) continue;
+    fc.features.forEach((f, i) => { const it = pasPrep(f, key, def, i); if (it) items.push(it); });
+  }
+  pasPrepared.set(src, items);
+  return items;
+}
+/* GeoJSON -> punkter, linjer og flader (lon/lat) med ramme til hurtig frasortering. */
+function pasPrep(f, key, def, i) {
+  const pts = [], lines = [], polys = [];
+  const walk = g => {
+    if (!g) return;
+    const c = g.coordinates;
+    if (g.type === "Point") pts.push(c);
+    else if (g.type === "MultiPoint") pts.push(...c);
+    else if (g.type === "LineString") lines.push(c);
+    else if (g.type === "MultiLineString") lines.push(...c);
+    else if (g.type === "Polygon") polys.push(c);
+    else if (g.type === "MultiPolygon") polys.push(...c);
+    else if (g.type === "GeometryCollection") (g.geometries || []).forEach(walk);
+  };
+  walk(f.geometry);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const ext = p => { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1]; };
+  pts.forEach(ext); lines.forEach(l => l.forEach(ext)); polys.forEach(p => p[0]?.forEach(ext));
+  if (!Number.isFinite(x0)) return null;
+  return { id: key + ":" + i, key, def, p: f.properties || {}, pts, lines, polys, bbox: [x0, y0, x1, y1] };
+}
+/* Afstand i meter fra (lat, lon) til hensynet og nærmeste punkt på det (0 inde i en flade). */
+function pasDist(it, lat, lon) {
+  const kx = 111320 * Math.cos(lat * Math.PI / 180), ky = 110574;
+  const X = p => (p[0] - lon) * kx, Y = p => (p[1] - lat) * ky;
+  for (const poly of it.polys) if (poly[0] && inRing(lon, lat, poly[0]) && !poly.slice(1).some(h => inRing(lon, lat, h))) return { d: 0, at: [lat, lon] };
+  let best = Infinity, at = null;
+  const point = p => { const d = Math.hypot(X(p), Y(p)); if (d < best) { best = d; at = p; } };
+  const seg = (a, b) => {
+    const ax = X(a), ay = Y(a), bx = X(b), by = Y(b), dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+    const t = L2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L2)) : 0;
+    const d = Math.hypot(ax + t * dx, ay + t * dy);
+    if (d < best) { best = d; at = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]; }
+  };
+  it.pts.forEach(point);
+  const path = l => { if (l.length === 1) point(l[0]); for (let i = 1; i < l.length; i++) seg(l[i - 1], l[i]); };
+  it.lines.forEach(path); it.polys.forEach(p => p.forEach(path));
+  return { d: best, at: at ? [at[1], at[0]] : null };
+}
+const pasRadius = it => it.def.pas.r * PAS_SCALE[pasCfg().afstand];
+/* Hensyn inden for maxM meter, nærmeste først. */
+function pasNear(lat, lon, maxM) {
+  const out = [], dLat = maxM / 110574 + 1e-6, dLon = maxM / (111320 * Math.cos(lat * Math.PI / 180)) + 1e-6;
+  for (const it of pasItems()) {
+    const b = it.bbox;
+    if (lon < b[0] - dLon || lon > b[2] + dLon || lat < b[1] - dLat || lat > b[3] + dLat) continue;
+    const r = pasDist(it, lat, lon); if (r.d <= maxM) out.push({ ...it, ...r });
+  }
+  return out.sort((a, b) => a.d - b.d || b.def.pas.lvl - a.def.pas.lvl);
+}
+const pasActive = new Map();   // id -> sidste afstand, så samme hensyn kun advarer én gang, til man er gået væk igen
+let pasShown = null, pasMuted = null;
+function pasCheck() {
+  const me = state.me, bar = $("#pasBar");
+  if (!me || !pasCfg().on || me.accuracy > 100) { if (!me || !pasCfg().on) bar?.classList.add("hidden"); return; }
+  const slack = Math.min(me.accuracy || 0, 25);       // usikker GPS: advar lidt før
+  const near = pasNear(me.lat, me.lon, 60 * PAS_SCALE.lang + slack);
+  const hits = near.filter(h => h.d <= pasRadius(h) + slack);
+  let fresh = null;
+  for (const h of hits) if (!pasActive.has(h.id)) { pasActive.set(h.id, h.d); if (!fresh) fresh = h; }
+  for (const id of [...pasActive.keys()]) {   // gået mindst 20 m ud over grænsen: kan advare igen
+    const h = near.find(x => x.id === id);
+    if (!h || h.d > pasRadius(h) + slack + 20) pasActive.delete(id);
+  }
+  if (fresh) { pasMuted = null; pasAlarm(fresh); }
+  const top = hits.find(h => h.id !== pasMuted);
+  if (top) pasBanner(top, hits.length); else { bar.classList.add("hidden"); pasShown = null; }
+}
+/* Notifikation på telefonen (ingen vibration eller bip fra appen). Kræver, at brugeren har tilladt notifikationer. */
+const notifyState = () => !("Notification" in window) ? "nej" : Notification.permission;
+async function askNotify() {
+  if (notifyState() !== "default") return notifyState();
+  try { return await Notification.requestPermission(); } catch (e) { return "denied"; }
+}
+function pasAlarm(h) {
+  if (notifyState() !== "granted") return;
+  const title = "Pas på: " + pasText(h.def.pas.what, h.p);
+  const body = `${h.d < 1 ? "Du står i området" : Math.round(h.d) + " m væk"}. ${pasText(h.def.pas.why, h.p)}`;
+  const opts = { body, tag: "paspaa-" + h.id, icon: "icon-192.png", badge: "favicon.png", renotify: true };
+  navigator.serviceWorker?.ready.then(r => r.showNotification(title, opts)).catch(() => { try { new Notification(title, opts); } catch (e) { /* ingen notifikation */ } });
+}
+const notifyBtn = () => pasCfg().on && notifyState() === "default" ? '<button class="big" id="pNotify">🔔 Tillad notifikationer ved pas på</button>' : "";
+function wireNotify(redraw) { $("#pNotify")?.addEventListener("click", async () => { const r = await askNotify(); toast(r === "granted" ? "Du får en notifikation, når du nærmer dig et hensyn" : "Notifikationer er ikke tilladt. Banneret i appen vises stadig.", 5000); redraw(); }); }
+function pasBanner(h, n) {
+  const bar = $("#pasBar"); pasShown = h;
+  const dir = h.d > 3 && h.at ? " mod " + compassName((bearingArr([state.me.lat, state.me.lon], h.at) + 360) % 360) : "";
+  bar.className = "lvl" + h.def.pas.lvl;
+  bar.innerHTML = `<div class="pi">⚠</div><div class="grow"><b>Pas på: ${esc(pasText(h.def.pas.what, h.p))}</b>
+    <br><span>${h.d < 1 ? "Du står i området" : `${Math.round(h.d)} m${dir}`}${n > 1 ? ` · ${n - 1} mere tæt på` : ""}</span>
+    <br><small>${esc(pasText(h.def.pas.why, h.p))}</small></div>
+    <button id="pasShow">Vis</button><button id="pasX" aria-label="Luk">✕</button>`;
+  $("#pasShow").onclick = () => { follow = false; pasFlash(h); };
+  $("#pasX").onclick = () => { pasMuted = h.id; bar.classList.add("hidden"); };
+}
+/* Vis hensynet på kortet et øjeblik (også når laget er slået fra). */
+function pasFlash(h) {
+  const f = { type: "FeatureCollection", features: [] };
+  h.pts.forEach(c => f.features.push({ type: "Feature", geometry: { type: "Point", coordinates: c } }));
+  h.lines.forEach(c => f.features.push({ type: "Feature", geometry: { type: "LineString", coordinates: c } }));
+  h.polys.forEach(c => f.features.push({ type: "Feature", geometry: { type: "Polygon", coordinates: c } }));
+  const lyr = L.geoJSON(f, { style: { color: "#d32f2f", weight: 5, fillOpacity: 0.2 }, pointToLayer: (x, ll) => L.circleMarker(ll, { radius: 12, color: "#d32f2f", weight: 4 }), interactive: false }).addTo(map);
+  const b = lyr.getBounds(); if (state.me) b.extend([state.me.lat, state.me.lon]);
+  map.fitBounds(b, { padding: [60, 60], maxZoom: 18 });
+  setTimeout(() => map.removeLayer(lyr), 8000);
+}
+/* Indstillinger og hvad der er tæt på lige nu (menuen og entreprenørens opgave). */
+function pasSheet(back) {
+  const cfg = pasCfg(), items = pasItems(), counts = {};
+  items.forEach(it => { counts[it.key] = (counts[it.key] || 0) + 1; });
+  const near = state.me ? pasNear(state.me.lat, state.me.lon, 300).slice(0, 12) : [];
+  openSheet(`<div class="head"><h3>Pas på</h3><button class="close" id="pBack">${back ? "Tilbage" : "Luk"}</button></div>
+    <p class="muted">Telefonen viser en notifikation og et banner, når du kommer tæt på et hensyn. Det er slået til for entreprenører.
+      Det virker uden net, men kun mens appen er åben.</p>
+    <label class="check"><input type="checkbox" id="pOn" ${cfg.on ? "checked" : ""}> Advar mig, når jeg nærmer mig et hensyn</label>
+    ${notifyBtn()}${cfg.on && notifyState() === "denied" ? '<p class="muted small">Notifikationer er blokeret i telefonens indstillinger, så kun banneret vises.</p>' : ""}
+    <label>Advar i god tid</label>
+    <div class="seg" id="pAfst">${[["kort", "Tæt på"], ["normal", "Normal"], ["lang", "Langt fra"]].map(([k, l]) => `<button data-a="${k}" class="${k === cfg.afstand ? "on" : ""}">${l}</button>`).join("")}</div>
+    <h4>Tæt på dig</h4>
+    ${!state.me ? '<p class="muted">Venter på GPS …</p>' : near.length ? `<ul class="list pasnear">${near.map((h, i) => `<li data-i="${i}"><span class="pdot lvl${h.def.pas.lvl}"></span><div class="grow"><b>${esc(pasText(h.def.pas.what, h.p))}</b><br><span class="muted small">${h.d < 1 ? "du står i det" : Math.round(h.d) + " m"} · ${esc(h.def.name)}</span></div></li>`).join("")}</ul>` : '<p class="muted">Ingen hensyn inden for 300 m.</p>'}
+    <h4>Lag med pas-på</h4>
+    ${Object.keys(counts).length ? `<ul class="list">${Object.entries(counts).map(([k, c]) => `<li><span class="pdot lvl${EXTRA[k].pas.lvl}"></span><div class="grow">${esc(EXTRA[k].name)} <span class="muted small">(${c}) · advarer ${EXTRA[k].pas.r ? "fra " + Math.round(EXTRA[k].pas.r * PAS_SCALE[cfg.afstand]) + " m" : "inde i området"}</span></div></li>`).join("")}</ul>`
+      : `<p class="muted">${document.body.classList.contains("jobmode") ? "Skovfogeden har ikke lagt pas-på-lag på opgaven endnu." : "Feltpakken har ingen pas-på-lag. Lav en ny feltpakke i SkovPlan, så kommer de med."}</p>`}`, true);
+  $("#pBack").onclick = e => { if (back) { e.stopPropagation(); back(); } };
+  $("#pOn").onchange = async e => { setPasCfg({ on: e.target.checked }); pasActive.clear(); if (e.target.checked) await askNotify(); pasCheck(); pasSheet(back); };
+  wireNotify(() => pasSheet(back));
+  $("#pAfst").onclick = e => { const b = e.target.closest("[data-a]"); if (!b) return; setPasCfg({ afstand: b.dataset.a }); pasActive.clear(); pasCheck(); pasSheet(back); };
+  sheet.querySelector(".pasnear")?.addEventListener("click", e => { const li = e.target.closest("[data-i]"); if (li) { closeSheet(); if (job) jobChip(); pasFlash(near[+li.dataset.i]); } });
+}
+/* Kun pas-på-lagene (til databasen og opgavelinks). */
+function pasOnly(lag) { const out = {}; for (const [k, fc] of Object.entries(lag || {})) if (EXTRA[k]?.pas && fc?.features?.length) out[k] = fc; return out; }
+/* Skovfogedens telefon lægger feltpakkens pas-på-lag i databasen, så entreprenørens links får dem (SkovPlan gør det også). */
+async function uploadPaspaa(force) {
+  const c = syncCfg(), lag = pasOnly(state.data?.extra?.lag); if (!c || !Object.keys(lag).length || !navigator.onLine) return false;
+  const body = { lag, lavet: state.data.pakke?.kort_version || state.data.pakke?.lavet || null, kilde: "app" };
+  const text = JSON.stringify(body); let h = 0; for (let i = 0; i < text.length; i += 7) h = (h * 31 + text.charCodeAt(i)) | 0;
+  const k = "pasHash:" + c.noegle; if (!force && safeLS(k) === String(h)) return true;
+  try { await rpc("felt_paspaa_gem", { p_noegle: c.noegle, p_data: body }); safeLS(k, String(h)); return true; }
+  catch (e) { console.warn("pas-på", e); return false; }
+}
+/* GPS-præcision med farve: grøn ≤ 10 m, orange ≤ 20 m, rød over. */
+const gpsClass = a => a <= 10 ? "good" : a <= 20 ? "fair" : "poor";
+const GPS_COLOR = { good: "#1e8e3e", fair: "#e8710a", poor: "#d32f2f" };
 $("#btnLocate").onclick = () => {
   if (!state.me) return toast("Venter på GPS …");
   const km = kmFromForest(state.me.lat, state.me.lon);
@@ -1867,6 +2065,7 @@ async function openOwnJob(t) {
 }
 function leaveJob() {
   job = null; if (jobLayer) { map.removeLayer(jobLayer); jobLayer = null; }
+  state.jobPas = null; pasActive.clear(); $("#pasBar").classList.add("hidden");
   document.body.classList.remove("jobmode"); $("#jobChip").classList.add("hidden");
   const saved = safeLS("basemap"); setBasemap(saved === null ? 0 : +saved % BASEMAPS.length);
   syncTasks().finally(() => taskList("mine"));
@@ -1909,12 +2108,13 @@ function taskList(tab = "mine") {
   const list = tab === "udfoert" ? [...sets.udfoert].sort((x, y) => (y.doneAt || "").localeCompare(x.doneAt || "")) : sort(sets[tab]);
   openSheet(`<div class="head"><h3>Opgaver</h3><button class="close">Luk</button></div>
     <div class="seg" id="tTabs">${[["mine", "Mine"], ...(own ? [] : [["alle", "Alle åbne"]]), ["udfoert", "Udført"]].map(([k, l]) => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${l} (${sets[k].length})</button>`).join("")}</div>
-    ${own ? "" : '<button class="primary big" id="tNew">+ Ny opgave</button>'}
+    ${own ? "" : '<div class="row2"><button class="primary big" id="tNew">+ Ny opgave</button><button class="big" id="tCrew">Entreprenørpakke…</button></div>'}
     ${list.length ? `<ul class="list tasks">${list.map(taskLine).join("")}</ul>` : `<p class="muted">${tab === "mine" ? "Ingen åbne opgaver til dig." : tab === "alle" ? "Ingen åbne opgaver." : "Ingen udførte opgaver endnu."}</p>`}
     ${own && !list.length && tab === "mine" ? `<p class="muted small">Opgaver, som skovfogeden giver til <b>${esc(myName() || "dit navn")}</b>, kommer her. Navnet skal stå på opgaven, som du har skrevet det her.</p>` : ""}
     <p class="muted small">Du er <b>${esc(myName() || "ikke navngivet")}</b>${roleName() ? " · " + roleName() : ""} · <button class="linklike" id="tName">skift navn</button>${state.taskSyncNote ? `<br>${esc(state.taskSyncNote)}` : ""}</p>`);
   $("#tTabs").onclick = e => { const b = e.target.closest("[data-tab]"); if (b) taskList(b.dataset.tab); };
   if ($("#tNew")) $("#tNew").onclick = () => taskForm(null);
+  if ($("#tCrew")) $("#tCrew").onclick = crewPick;   // CLAUDE-1795
   $("#tName").onclick = () => { askName(true); taskList(tab); };
   sheet.querySelector(".tasks")?.addEventListener("click", async e => {
     const tick = e.target.closest("[data-tick]");
@@ -2058,30 +2258,63 @@ const savedLinks = () => { try { return JSON.parse(safeLS(LINKS_KEY) || "[]"); }
 function rememberLink(l) { safeLS(LINKS_KEY, JSON.stringify([l, ...savedLinks().filter(x => x.token !== l.token)].slice(0, 30))); }
 const QUEUE_KEY = "opgaveKoe";
 let job = null, jobLayer = null;
-async function jobRpc(fn, body) {
-  const res = await fetch(`${job.db.r}/rpc/${fn}`, { method: "POST", headers: Object.assign({ "Content-Type": "application/json", apikey: job.db.a },
-    /^eyJ/.test(job.db.a) ? { Authorization: "Bearer " + job.db.a } : {}), body: JSON.stringify(body) });
+async function linkRpc(dbc, fn, body) {
+  const res = await fetch(`${dbc.r}/rpc/${fn}`, { method: "POST", headers: Object.assign({ "Content-Type": "application/json", apikey: dbc.a },
+    /^eyJ/.test(dbc.a) ? { Authorization: "Bearer " + dbc.a } : {}), body: JSON.stringify(body) });
   if (!res.ok) { let m = ""; try { m = (await res.json()).message; } catch (e) { /* ok */ } throw new Error(m || "HTTP " + res.status); }
   return res.json();
 }
-async function openJob(token, db64) {
+const jobRpc = (fn, body) => linkRpc(job.db, fn, body);
+async function openJob(token, db64, crewToken) {
   let dbc; try { dbc = JSON.parse(unb64url(db64)); } catch (e) { return toast("Linket er ugyldigt", 6000); }
-  job = { token, db: dbc, task: (savedLinks().find(l => l.token === token) || {}).task || null };
+  const saved = savedLinks().find(l => l.token === token) || {};
+  job = { token, db: dbc, task: saved.task || null, crew: crewToken || saved.crew || null };
+  if (crewLayer) { map.removeLayer(crewLayer); crewLayer = null; }
+  // CLAUDE-1795: pas-på-lag til opgaven: fra pakken, fra telefonen (gemt sidst) eller fra egen feltpakke
+  state.jobPas = (job.crew && crew?.token === job.crew ? crew.pkg?.paspaa?.lag : null)
+    || await db.get("kv", "pas:opg:" + token).catch(() => null) || (state.data ? pasOnly(state.data.extra?.lag) : null);
+  pasActive.clear();
   $("#empty").classList.add("hidden"); document.body.classList.add("jobmode"); setBasemap(1);
   if (job.task) drawJob();
   await flushQueue();
   try { const t = await jobRpc("felt_opgave_aaben", { p_token: token }); if (!t) throw new Error("Opgaven findes ikke længere eller er slettet");
-    job.task = t; rememberLink({ token, db: db64, title: t.title, ejendom: t.ejendom, task: t }); }
+    job.task = t; rememberLink({ token, db: db64, title: t.title, ejendom: t.ejendom, task: t, crew: job.crew }); }
   catch (e) { if (!job.task) { openSheet(`<div class="head"><h3>Opgave</h3></div><p>${esc(/Failed to fetch/.test(e.message) ? "Ingen forbindelse. Prøv igen, når der er net." : e.message)}</p>`); return; } }
+  if (!job.crew) jobRpc("felt_opgave_paspaa", { p_token: token }).then(d => {
+    if (!d?.lag || job?.token !== token) return;
+    state.jobPas = pasOnly(d.lag); db.put("kv", state.jobPas, "pas:opg:" + token).catch(() => {});
+    drawJobMap(); pasCheck();
+  }).catch(() => { /* databasen har ikke pas-på endnu, eller ingen net */ });
   drawJob(true);
 }
-function drawJob(fit) {
+/* Pas-på-lagene på entreprenørens kort (samme stil som i feltpakken). */
+function drawPasLayers(group, lag) {
+  for (const [key, def] of Object.entries(EXTRA)) {
+    if (!def.pas || !lag?.[key]?.features?.length) continue;
+    L.geoJSON(lag[key], { style: f => ({ ...def.style, interactive: !/Polygon/.test(f.geometry?.type || "") }), pointToLayer: (f, ll) => L.circleMarker(ll, def.style),
+      onEachFeature: (f, l) => l.bindPopup(`<b>Pas på: ${esc(pasText(def.pas.what, f.properties))}</b><br>${esc(pasText(def.pas.why, f.properties))}`) }).addTo(group);
+  }
+}
+function drawJobMap(fit) {
   const t = job.task;
   if (jobLayer) map.removeLayer(jobLayer);
   jobLayer = L.layerGroup().addTo(map);
-  if (t.omraade) L.geoJSON(t.omraade, { style: { color: "#e8710a", weight: 3, fillOpacity: 0.15 } }).addTo(jobLayer);
+  drawPasLayers(jobLayer, state.jobPas);
+  if (t.omraade) L.geoJSON(t.omraade, { style: { color: "#e8710a", weight: 3, fillOpacity: 0.15 }, interactive: false }).addTo(jobLayer);
   if (t.punkt) L.marker(t.punkt, { icon: L.divIcon({ className: "", html: '<div class="task-pin mine">⚑</div>', iconSize: [26, 26], iconAnchor: [-6, 30] }) }).addTo(jobLayer);
   if (fit) { try { const b = L.geoJSON(t.omraade || { type: "Point", coordinates: [t.punkt[1], t.punkt[0]] }).getBounds(); map.fitBounds(b, { padding: [30, 30], maxZoom: 17 }); } catch (e) { /* intet sted */ } }
+}
+/* Hensyn ved opgaven: inden for 300 m af området eller punktet. */
+function jobPasNear(t) {
+  let c = t.punkt; if (!c && t.omraade) { try { const ll = L.geoJSON(t.omraade).getBounds().getCenter(); c = [ll.lat, ll.lng]; } catch (e) { /* intet sted */ } }
+  if (!c) return [];
+  let r = 300; if (t.omraade) { try { const b = L.geoJSON(t.omraade).getBounds(); r += map.distance(b.getCenter(), b.getNorthEast()); } catch (e) { /* ok */ } }
+  return pasNear(c[0], c[1], r);
+}
+function drawJob(fit) {
+  const t = job.task;
+  drawJobMap(fit);
+  const pn = jobPasNear(t), red = pn.filter(h => h.def.pas.lvl > 1).length;
   const late = t.due && t.due < todayIso() && t.status !== "udført";
   const queued = JSON.parse(safeLS(QUEUE_KEY) || "[]").filter(q => q.token === job.token).length;
   openSheet(`<div class="head"><h3>${esc(t.title)}</h3><button class="close" id="jHide">Kort</button></div>
@@ -2091,6 +2324,8 @@ function drawJob(fit) {
     ${t.note ? `<div class="jnote">${esc(t.note).replace(/\n/g, "<br>")}</div>` : ""}
     ${t.punkt ? `<div class="actions"><button data-jgo>➜ Vis vej i appen</button><a class="btn" href="https://www.google.com/maps/dir/?api=1&destination=${t.punkt[0]},${t.punkt[1]}" target="_blank" rel="noopener">Google Maps</a></div>` : ""}
     ${queued ? `<p class="warn">${queued} melding${queued === 1 ? "" : "er"} sendes, når der er net.</p>` : ""}
+    <button class="pasline ${red ? "lvl2" : pn.length ? "lvl1" : ""}" id="jPas">⚠ ${pn.length ? `Pas på: ${pn.length} hensyn ved opgaven${red ? ` (${red} må ikke røres)` : ""}` : "Pas på: ingen kendte hensyn ved opgaven"}${pasCfg().on ? "" : " · advarsler er slået fra"}</button>
+    ${notifyBtn()}
     <div class="stack jbtns">
       ${t.status === "åben" || !t.status ? '<button class="primary big" data-meld="start">▶ Jeg går i gang</button>' : ""}
       ${t.status !== "udført" ? '<button class="primary big" data-meld="faerdig">✓ Opgaven er færdig</button>' : ""}
@@ -2098,9 +2333,12 @@ function drawJob(fit) {
       <button class="big" data-meld="besked">✎ Skriv en besked</button>
     </div>
     ${taskLogHtml(t)}
-    ${state.data && isContractor() ? '<button class="big ghost" id="jAll">‹ Alle mine opgaver</button>' : ""}
+    ${job.crew ? '<button class="big ghost" id="jCrew">‹ Alle opgaver i pakken</button>' : state.data && isContractor() ? '<button class="big ghost" id="jAll">‹ Alle mine opgaver</button>' : ""}
     <p class="muted small">Du er <b>${esc(myName() || "ikke navngivet")}</b> · <button class="linklike" id="jName">skift navn</button></p>`, true);
   $("#jAll")?.addEventListener("click", leaveJob);
+  $("#jCrew")?.addEventListener("click", backToCrew);
+  $("#jPas").onclick = () => pasSheet(() => drawJob());
+  wireNotify(() => drawJob());
   $("#jHide").onclick = e => { e.stopPropagation(); closeSheet(); jobChip(); };
   $("#jName").onclick = () => { askName(true); drawJob(); };
   sheet.querySelector("[data-jgo]")?.addEventListener("click", () => { closeSheet(); jobChip(); goTo(t.punkt[0], t.punkt[1], t.title); });
@@ -2156,18 +2394,133 @@ async function flushQueue() {
 window.addEventListener("online", () => { if (job) flushQueue().then(() => drawJob()); });
 /* Uden skovkort, men med gemte opgavelinks: vis entreprenørens opgaver i stedet for velkomsten. */
 function jobList() {
-  const links = savedLinks(), picks = pickLinks(); if (!links.length && !picks.length) return false;
+  const crews = crewLinks(), links = savedLinks().filter(l => !l.crew || !crews.some(c => c.token === l.crew)), picks = pickLinks();   // CLAUDE-1795
+  if (!links.length && !picks.length && !crews.length) return false;
   $("#empty").classList.add("hidden");
-  openSheet(`<div class="head"><h3>${links.length ? "Mine opgaver" : "Mine afhentninger"}</h3></div>
-    <ul class="list tasks">${links.map(l => `<li data-job="${esc(l.token)}"><div class="grow"><b>${esc(l.title || "Opgave")}</b><br><span class="muted small">${esc(l.ejendom || "")} ${l.task ? statusChip(l.task.status) : ""}</span></div></li>`).join("")}
+  openSheet(`<div class="head"><h3>${links.length || crews.length ? "Mine opgaver" : "Mine afhentninger"}</h3></div>
+    <ul class="list tasks">${crews.map(l => `<li data-crewlink="${esc(l.token)}"><div class="grow"><b>☑ ${esc(l.ejendom || "Opgaver")}</b><br><span class="muted small">Pakke til ${esc(l.navn || "dig")} · ${l.n || 0} opgave${l.n === 1 ? "" : "r"}</span></div></li>`).join("")}
+      ${links.map(l => `<li data-job="${esc(l.token)}"><div class="grow"><b>${esc(l.title || "Opgave")}</b><br><span class="muted small">${esc(l.ejendom || "")} ${l.task ? statusChip(l.task.status) : ""}</span></div></li>`).join("")}
       ${picks.map(l => `<li data-pick="${esc(l.token)}"><div class="grow"><b>⛟ ${esc(l.title || "Stakke til afhentning")}</b><br><span class="muted small">${esc(l.ejendom || "")} · ${(l.card?.stakke || []).length} stakke</span></div></li>`).join("")}</ul>
     <p class="muted small">Åbn linket fra skovfogeden for at få en ny opgave hertil.</p>`, true);
   sheet.querySelector(".tasks").onclick = e => {
-    const li = e.target.closest("[data-job]"), lp = e.target.closest("[data-pick]");
+    const li = e.target.closest("[data-job]"), lp = e.target.closest("[data-pick]"), lc = e.target.closest("[data-crewlink]");
+    if (lc) { const l = crews.find(x => x.token === lc.dataset.crewlink); return openCrew(l.token, l.db); }
     if (li) { const l = links.find(x => x.token === li.dataset.job); openJob(l.token, l.db); }
     if (lp) { const l = picks.find(x => x.token === lp.dataset.pick); openPickup(l.token, l.db); }
   };
   return true;
+}
+
+/* ---------- entreprenørpakke (CLAUDE-1795)
+   ?entr=<kode>&k=/db=<server>: ét link pr. entreprenør og ejendom med kun entreprenørens opgaver (navnet på opgaven)
+   og ejendommens pas-på-lag. Pakken gemmes på telefonen, så opgaver, områder og pas-på-advarsler virker uden net.
+   Hver opgave åbnes som et almindeligt opgavelink (gå i gang, problem, færdig), og meldinger sendes, når der er net. */
+const CREW_KEY = "entrLinks";
+const crewLinks = () => { try { return JSON.parse(safeLS(CREW_KEY) || "[]"); } catch (e) { return []; } };
+function rememberCrew(l) { safeLS(CREW_KEY, JSON.stringify([l, ...crewLinks().filter(x => x.token !== l.token)].slice(0, 20))); }
+let crew = null, crewLayer = null;
+async function openCrew(token, db64) {
+  let dbc; try { dbc = JSON.parse(unb64url(db64)); } catch (e) { return toast("Linket er ugyldigt", 6000); }
+  if (job) { job = null; if (jobLayer) { map.removeLayer(jobLayer); jobLayer = null; } }
+  crew = { token, db: dbc, db64, pkg: await db.get("kv", "entr:" + token).catch(() => null) };
+  $("#empty").classList.add("hidden"); document.body.classList.add("jobmode"); setBasemap(1);
+  if (crew.pkg) { applyCrew(); drawCrew(true); }
+  try {
+    const pkg = await linkRpc(dbc, "felt_entreprenoer_aaben", { p_token: token });
+    if (!pkg) throw new Error("Linket virker ikke længere. Bed skovfogeden om et nyt.");
+    if (crew?.token !== token) return;
+    crew.pkg = pkg; await db.put("kv", pkg, "entr:" + token).catch(() => {});
+    rememberCrew({ token, db: db64, ejendom: pkg.ejendom, navn: pkg.navn, n: (pkg.opgaver || []).length });
+    applyCrew();
+  } catch (e) {
+    const offline = /Failed to fetch|NetworkError/.test(e.message);
+    if (!crew.pkg) { openSheet(`<div class="head"><h3>Opgaver</h3></div><p>${esc(offline ? "Ingen forbindelse. Åbn linket igen, når der er net. Derefter virker det uden net." : e.message)}</p>`); return; }
+    if (!offline) toast(e.message, 6000);
+  }
+  if (!job) drawCrew(!crew.shown);
+}
+function applyCrew() {
+  state.jobPas = crew.pkg.paspaa?.lag ? pasOnly(crew.pkg.paspaa.lag) : null; pasActive.clear();
+  if (!myName() && crew.pkg.navn) safeLS("mitNavn", crew.pkg.navn);   // meldinger står i entreprenørens navn
+  for (const t of [...(crew.pkg.opgaver || [])].reverse()) {
+    const { token, ...task } = t;
+    rememberLink({ token, db: crew.db64, title: t.title, ejendom: crew.pkg.ejendom, task: { ...task, ejendom: crew.pkg.ejendom }, crew: crew.token });
+  }
+}
+const crewTasks = () => (crew?.pkg?.opgaver || []).map(t => ({ ...t, ...((savedLinks().find(l => l.token === t.token) || {}).task || {}), token: t.token }));
+function drawCrew(fit) {
+  crew.shown = true;
+  if (crewLayer) map.removeLayer(crewLayer);
+  crewLayer = L.layerGroup().addTo(map);
+  drawPasLayers(crewLayer, state.jobPas);
+  const tasks = crewTasks(), open = tasks.filter(t => t.status !== "udført"), done = tasks.filter(t => t.status === "udført");
+  const bounds = L.latLngBounds([]);
+  tasks.forEach((t, i) => {
+    const doneT = t.status === "udført";
+    if (t.omraade) { const g = L.geoJSON(t.omraade, { style: { color: doneT ? "#777" : "#e8710a", weight: 3, fillOpacity: doneT ? 0.05 : 0.15 } }).addTo(crewLayer); g.on("click", () => openJob(t.token, crew.db64, crew.token)); bounds.extend(g.getBounds()); }
+    if (t.punkt) { L.marker(t.punkt, { icon: L.divIcon({ className: "", html: `<div class="task-pin ${doneT ? "done" : "mine"}">${i + 1}</div>`, iconSize: [26, 26], iconAnchor: [-6, 30] }) })
+      .on("click", () => openJob(t.token, crew.db64, crew.token)).addTo(crewLayer); bounds.extend(t.punkt); }
+  });
+  if (fit && bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 });
+  const nr = t => tasks.indexOf(t) + 1;
+  const line = t => { const late = t.due && t.due < todayIso() && t.status !== "udført", pn = jobPasNear(t).filter(h => h.def.pas.lvl > 1).length;
+    return `<li data-crew="${esc(t.token)}"><div class="task-pin small ${t.status === "udført" ? "done" : "mine"}">${nr(t)}</div><div class="grow"><b>${esc(t.title || "Opgave")}</b> ${statusChip(t.status)}
+      <br><span class="muted small">${t.stand ? "Litra " + esc(t.stand.label) + " · " : ""}${t.due ? `<span class="${late ? "late" : ""}">frist ${new Date(t.due + "T12:00").toLocaleDateString("da-DK", { day: "numeric", month: "short" })}</span>` : "ingen frist"}${pn ? ` · <span class="late">⚠ ${pn} pas-på</span>` : ""}</span></div></li>`; };
+  const items = pasItems().length, hentet = crew.pkg.hentet ? new Date(crew.pkg.hentet).toLocaleString("da-DK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
+  openSheet(`<div class="head"><h3>Opgaver til ${esc(crew.pkg.navn || myName() || "dig")}</h3><button class="close" id="cHide">Kort</button></div>
+    <p class="muted">${esc(crew.pkg.ejendom || "")}${hentet ? " · hentet " + hentet : ""}${navigator.onLine ? "" : " · uden net: viser det, der er gemt"}</p>
+    ${open.length ? `<ul class="list tasks crew">${open.map(line).join("")}</ul>` : '<p class="muted">Ingen åbne opgaver til dig lige nu.</p>'}
+    ${done.length ? `<h4>Færdige</h4><ul class="list tasks crew">${done.map(line).join("")}</ul>` : ""}
+    <button class="pasline ${items ? "lvl1" : ""}" id="cPas">⚠ ${items ? `Pas på: ${items} hensyn på ejendommen. Telefonen advarer, når du kommer tæt på.` : "Pakken har ingen pas-på-lag endnu."}</button>
+    ${notifyBtn()}
+    <div class="actions"><button id="cReload">⟳ Hent nyeste</button></div>
+    <p class="muted small">Opgaver, områder og pas-på-lag er gemt på telefonen og virker uden net. Baggrundskortet gemmes, når du har set det med net,
+      så kig kortet igennem ved opgaverne, inden du kører ud. Du er <b>${esc(myName() || "ikke navngivet")}</b> · <button class="linklike" id="cName">skift navn</button></p>`, true);
+  $("#cHide").onclick = e => { e.stopPropagation(); closeSheet(); crewChip(); };
+  $("#cPas").onclick = () => pasSheet(() => drawCrew());
+  $("#cReload").onclick = () => openCrew(crew.token, crew.db64);
+  wireNotify(() => drawCrew());
+  $("#cName").onclick = () => { askName(true); drawCrew(); };
+  sheet.querySelectorAll(".crew").forEach(ul => ul.onclick = e => { const li = e.target.closest("[data-crew]"); if (li) openJob(li.dataset.crew, crew.db64, crew.token); });
+}
+function crewChip() { const b = $("#jobChip"); b.textContent = "☑ Vis opgaverne"; b.classList.remove("hidden"); b.onclick = () => { b.classList.add("hidden"); b.textContent = "⚑ Vis opgaven"; drawCrew(); }; }
+function backToCrew() {
+  job = null; if (jobLayer) { map.removeLayer(jobLayer); jobLayer = null; }
+  if (crew) { applyCrew(); drawCrew(); }
+}
+/* Skovfogeden: lav entreprenørens pakke-link (alle åbne opgaver med entreprenørens navn + pas-på-lagene). */
+function dbQuery(c) {
+  const m = /^https:\/\/([a-z0-9]{10,40})\.supabase\.co\/rest\/v1\/?$/.exec(c.rest || ""), a = String(c.anon || "");
+  return m && /^sb_publishable_[A-Za-z0-9_-]{10,80}$/.test(a) ? `k=${m[1]}.${a.slice(15)}` : "db=" + b64url(JSON.stringify({ r: c.rest, a: c.anon }));
+}
+function crewPick() {
+  if (!syncCfg()) return toast("Feltpakken har ingen online-synk, så der kan ikke laves en entreprenørpakke", 5000);
+  const counts = new Map();
+  for (const t of openTasks()) { const n = (t.assignee || "").trim(); if (!n) continue; const k = n.toLowerCase(); counts.set(k, { n: counts.get(k)?.n || n, c: (counts.get(k)?.c || 0) + 1 }); }
+  const names = [...counts.values()].sort((a, b) => a.n.localeCompare(b.n, "da"));
+  openSheet(`<div class="head"><h3>Entreprenørpakke</h3><button class="close" id="cpBack">Tilbage</button></div>
+    <p class="muted">Ét link til entreprenøren med kun de opgaver, der står i entreprenørens navn, og ejendommens pas-på-lag.
+      Linket virker uden net, når det er åbnet én gang, og nye opgaver til samme navn kommer selv med.</p>
+    ${names.length ? `<ul class="list" id="cpList">${names.map(x => `<li data-n="${esc(x.n)}"><div class="grow"><b>${esc(x.n)}</b><br><span class="muted small">${x.c} ${x.c === 1 ? "åben opgave" : "åbne opgaver"}</span></div></li>`).join("")}</ul>`
+      : '<p class="muted">Ingen åbne opgaver er tildelt nogen endnu. Skriv entreprenørens navn under «Hvem?» på opgaverne.</p>'}`);
+  $("#cpBack").onclick = e => { e.stopPropagation(); taskList("alle"); };
+  $("#cpList")?.addEventListener("click", e => { const li = e.target.closest("[data-n]"); if (li) crewShare(li.dataset.n); });
+}
+async function crewShare(name) {
+  const c = syncCfg(); if (!c) return;
+  if (!navigator.onLine) return toast("Kræver net");
+  toast("Laver pakken …", 20000);
+  for (const t of openTasks().filter(t => sameName(t.assignee, name)))   // område og punkt, så opgaven kan ses uden skovkort
+    if (!t.omraade || !t.punkt) { const p = taskPoint(t); await putTask({ ...t, omraade: t.omraade || (t.stand ? standShape(t.stand.key) : null), punkt: t.punkt || (p ? [+p[0].toFixed(6), +p[1].toFixed(6)] : null), ejendomNavn: state.data.name }); }
+  await syncTasks(); const pasOk = await uploadPaspaa(true);
+  let token; try { token = await rpc("felt_entreprenoer_link", { p_noegle: c.noegle, p_navn: name }); }
+  catch (e) { return toast(/felt_entreprenoer|function|schema/i.test(e.message) ? "Databasen skal opdateres, før entreprenørpakker virker (skovplan_felt_paspaa.sql)" : "Kunne ikke lave linket: " + e.message, 7000); }
+  const url = `${location.origin}${location.pathname}?entr=${token}&${dbQuery(c)}`;
+  const text = `Hej ${name}. Her er dine opgaver på ${state.data.name || "ejendommen"} med kort og pas-på (§3, fortidsminder, diger m.m.). Åbn linket på telefonen, mens du har net. Derefter virker det også uden net, og telefonen advarer, når du kommer tæt på et hensyn:`;
+  if (!pasOk) toast("Pas-på-lagene kunne ikke sendes med. Linket virker, men uden advarsler.", 6000);
+  try { if (navigator.share) { await navigator.share({ title: "Opgaver til " + name, text, url }); return; } } catch (e) { if (e.name === "AbortError") return; }
+  try { await navigator.clipboard.writeText(text + " " + url); toast("Linket er kopieret. Sæt det ind i en sms eller mail til " + name + ".", 6000); }
+  catch (e) { prompt("Kopiér linket og send det til " + name + ":", url); }
 }
 
 /* ---------- «Stak afhentet»: vognmandens link/QR fra vognmandskortet (CLAUDE-1276)
@@ -2206,7 +2559,7 @@ async function openPickup(token, db64, regId) {
   drawPickup(true);
 }
 /* Vognmandskortets planlagte rute (CLAUDE-1278): linje med pile, nummererede stop, V = vendeplads, indkørsel. */
-function bearing(a, b) { const r = Math.PI / 180, y = Math.sin((b[1] - a[1]) * r) * Math.cos(b[0] * r),
+function bearingArr(a, b) { const r = Math.PI / 180, y = Math.sin((b[1] - a[1]) * r) * Math.cos(b[0] * r),   // CLAUDE-1795: eget navn (bearing() til «Gå til» nedenfor overskrev den, så pilene på ruten ikke drejede)
   x = Math.cos(a[0] * r) * Math.sin(b[0] * r) - Math.sin(a[0] * r) * Math.cos(b[0] * r) * Math.cos((b[1] - a[1]) * r); return Math.atan2(y, x) / r; }
 function drawRoute(layer, rute, focusStop) {
   const line = (rute.linje || []).filter(p => Array.isArray(p) && p.length >= 2);
@@ -2217,7 +2570,7 @@ function drawRoute(layer, rute, focusStop) {
     for (let i = 1; i < line.length; i++) {
       acc += map.distance(line[i - 1], line[i]);
       if (acc < 120) continue; acc = 0;
-      L.marker(line[i], { interactive: false, icon: L.divIcon({ className: "", html: `<div class="route-arrow" style="transform:rotate(${bearing(line[i - 1], line[i])}deg)">▲</div>`, iconSize: [14, 14], iconAnchor: [7, 7] }) }).addTo(layer);
+      L.marker(line[i], { interactive: false, icon: L.divIcon({ className: "", html: `<div class="route-arrow" style="transform:rotate(${bearingArr(line[i - 1], line[i])}deg)">▲</div>`, iconSize: [14, 14], iconAnchor: [7, 7] }) }).addTo(layer);
     }
   }
   const ind = rute.indkoersel;
@@ -2415,6 +2768,7 @@ const ACTIONS = {
   openGpkg: () => $("#gpkgInput").click(),
   welcome: () => showWelcome(true),
   layers: layerMenu,
+  pasPaa: () => pasSheet(),   // CLAUDE-1795
   sync: () => syncNow(true),
   closeWelcome: () => { if (!state.ortho) safeLS("skipOrtho", "1"); $("#empty").classList.add("hidden"); },
   listAll, export: doExport, clearRegs: clearExported,
@@ -2538,7 +2892,7 @@ async function loadGpkg(g, f, meta) {
   await db.put("kv", data, "skovkort:" + data.id);
   await activateProperty(data, await db.get("kv", "ortofoto:" + data.id));
   await rememberProperty(data);
-  scheduleSync();
+  scheduleSync(); uploadPaspaa();   // CLAUDE-1795
   toast(`Indlæst: ${data.layers.skovafdelinger.features.length} litradele`);
 }
 /* Læs ortofotoet (MBTiles fra SkovPlan) og læg fliserne i telefonens lager, så det virker uden net. */
@@ -2865,7 +3219,7 @@ async function updateMap(d, base, version) {
   await db.put("kv", data, "skovkort:" + data.id);
   if (state.data?.id === data.id) {           // den viste ejendom: tegn kortet igen uden at flytte udsnittet
     state.data = data; state.regs = regsFor(data); state.selected = null;
-    drawData(); drawRegMarkers(); restyle(); refreshMenuInfo();
+    drawData(); drawRegMarkers(); restyle(); refreshMenuInfo(); uploadPaspaa();   // CLAUDE-1795
   }
   await rememberProperty(data);
   toast(`Skovkortet for ${data.name} er opdateret fra SkovPlan`, 4000);
@@ -2892,12 +3246,13 @@ async function updateMap(d, base, version) {
   if (linked || customer) history.replaceState(null, "", location.pathname);
   if (customer) chooseProperty(customer); else if (linked) downloadPackage(linked);
   const dbArg = dbParam(params);
-  if (!role() && ((params.get("opgave") || params.get("afhent")) && dbArg)) safeLS("rolle", "entreprenor");   // CLAUDE-1280: kom via et opgavelink
+  if (!role() && ((params.get("opgave") || params.get("afhent") || params.get("entr")) && dbArg)) safeLS("rolle", "entreprenor");   // CLAUDE-1280: kom via et opgavelink
   askRole();
-  if (params.get("opgave") && dbArg) openJob(params.get("opgave"), dbArg);   // CLAUDE-1211
+  if (params.get("entr") && dbArg) openCrew(params.get("entr"), dbArg);   // CLAUDE-1795: entreprenørpakke
+  else if (params.get("opgave") && dbArg) openJob(params.get("opgave"), dbArg);   // CLAUDE-1211
   else if (params.get("afhent") && dbArg) openPickup(params.get("afhent"), dbArg, hashPile());   // CLAUDE-1276
   else if (!state.data && !linked && !customer) jobList();
-  if (syncCfg()) { state.syncHash = safeLS("syncHash:" + syncCfg().noegle); scheduleSync(); }
+  if (syncCfg()) { state.syncHash = safeLS("syncHash:" + syncCfg().noegle); scheduleSync(); setTimeout(uploadPaspaa, 6000); }
   setTimeout(checkMapUpdates, 4000); setInterval(checkMapUpdates, 10 * 60 * 1000); setInterval(syncTasks, 2 * 60 * 1000);
   window.addEventListener("online", () => { checkMapUpdates(); syncTasks(); });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { checkMapUpdates(); syncTasks(); } });
