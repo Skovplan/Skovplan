@@ -2271,7 +2271,7 @@ function taskLogHtml(t) {
   const log = t.log || []; if (!log.length) return "";
   return `<h4>Meldinger</h4><ul class="list tlog">${[...log].reverse().map(e => `<li><div class="grow"><b>${LOG_LABEL[e.type] || esc(e.type)}</b> · ${esc(e.navn || "?")}
     <span class="muted small">${new Date(e.t).toLocaleString("da-DK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
-    ${e.maengder ? `<br>${e.art === "udkoert" ? "Kørt ud" : "Høstet"}: ${esc(amountText(e.maengder))}` : ""}${e.tekst ? `<br>${esc(e.tekst)}` : ""}${e.foto ? `<br><img class="tfoto" data-foto="${esc(e.foto)}" alt="Foto">` : ""}</div></li>`).join("")}</ul>`;
+    ${e.maengder ? `<br>${e.art === "udkoert" ? "Kørt ud" : "Høstet"}: ${esc(amountText(e.maengder))}${e.laengder ? ` (${esc(Object.entries(e.laengder).map(([k, v]) => k + " " + v).join(", "))})` : ""}` : ""}${e.tekst ? `<br>${esc(e.tekst)}` : ""}${e.foto ? `<br><img class="tfoto" data-foto="${esc(e.foto)}" alt="Foto">` : ""}</div></li>`).join("")}</ul>`;
 }
 async function hydrateTaskPhotos(fetcher) {
   for (const img of sheet.querySelectorAll("img[data-foto]")) {
@@ -2493,6 +2493,17 @@ function meldForm(type) {
     drawJob();
   };
 }
+/* CLAUDE-1800: med aflægningslængder. Er databasen ikke opdateret endnu, sendes længderne med i teksten. */
+async function sendAmount(item) {
+  const body = { p_token: item.token, p_navn: item.navn, p_art: item.art, p_maengder: item.maengder, p_tekst: item.tekst || null };
+  if (!item.laengder) return jobRpc("felt_opgave_maengde", body);
+  try { return await jobRpc("felt_opgave_maengde", { ...body, p_laengder: item.laengder }); }
+  catch (e) {
+    if (!/p_laengder|function|schema cache/i.test(e.message)) throw e;
+    const txt = Object.entries(item.laengder).map(([k, v]) => `${k}: ${v}`).join(", ");
+    return jobRpc("felt_opgave_maengde", { ...body, p_tekst: [item.tekst, "Aflægningslængde " + txt].filter(Boolean).join(". ") });
+  }
+}
 /* ---------- CLAUDE-1799: høstede og udkørte mængder pr. sortiment
    Skoveren melder høstet (fx korttømmer 12 m³), udkøreren udkørt. Tallene lægges sammen i databasen for opgaven og for
    hele projektet (alle opgaver under samme hovedopgave), så udkøreren ser, hvad der er høstet, og SkovPlan kan følge med. */
@@ -2503,13 +2514,14 @@ function amountRows(t) {
   const pm = t.projekt_maengder || t.maengder || {}, sorts = (t.sortimenter || []).filter(x => x?.navn);
   const names = [...new Set([...sorts.map(x => x.navn), ...Object.keys(pm.hoestet || {}), ...Object.keys(pm.udkoert || {})])];
   return names.map(n => { const s = sorts.find(x => x.navn === n) || {};
-    return { navn: n, plan: +s.plan || 0, enhed: s.enhed || "m³", hoestet: +(pm.hoestet || {})[n] || 0, udkoert: +(pm.udkoert || {})[n] || 0 }; });
+    return { navn: n, plan: +s.plan || 0, enhed: s.enhed || "m³", hoestet: +(pm.hoestet || {})[n] || 0, udkoert: +(pm.udkoert || {})[n] || 0,
+      laengde: (t.projekt_laengder || t.laengder || {})[n] || "", planLaengde: s.laengde || "" }; });
 }
 function amountHtml(t) {
   const rows = amountRows(t); if (!rows.some(r => r.hoestet || r.udkoert)) return "";
   const sum = k => rows.reduce((a, r) => a + r[k], 0), hasPlan = rows.some(r => r.plan);
   return `<h4>Mængder i ${t.projekt?.navn ? "projektet" : "opgaven"}</h4><table class="amt"><tr><th>Sortiment</th>${hasPlan ? "<th>Planlagt</th>" : ""}<th>Høstet</th><th>Kørt ud</th></tr>
-    ${rows.map(r => `<tr><td>${esc(r.navn)}</td>${hasPlan ? `<td>${r.plan ? fmtAmt(r.plan) : ""}</td>` : ""}<td>${r.hoestet ? fmtAmt(r.hoestet) : ""}</td><td>${r.udkoert ? fmtAmt(r.udkoert) : ""}</td></tr>`).join("")}
+    ${rows.map(r => `<tr><td>${esc(r.navn)}${r.laengde ? `<br><span class="muted small">aflagt ${esc(r.laengde)}</span>` : ""}</td>${hasPlan ? `<td>${r.plan ? fmtAmt(r.plan) : ""}</td>` : ""}<td>${r.hoestet ? fmtAmt(r.hoestet) : ""}</td><td>${r.udkoert ? fmtAmt(r.udkoert) : ""}</td></tr>`).join("")}
     <tr class="sum"><td>I alt</td>${hasPlan ? `<td>${fmtAmt(sum("plan"))}</td>` : ""}<td>${fmtAmt(sum("hoestet"))}</td><td>${fmtAmt(sum("udkoert"))}</td></tr></table>
     ${sum("hoestet") > sum("udkoert") ? `<p class="muted small">Ligger i skoven: ca. ${fmtAmt(sum("hoestet") - sum("udkoert"))} m³</p>` : ""}`;
 }
@@ -2523,8 +2535,10 @@ function amountForm(t) {
     <p class="muted small">Skriv det, du har ${kind === "udkoert" ? "kørt ud" : "høstet"} siden sidst, pr. sortiment. Tallene lægges oven i det, der er meldt før. Et minus retter en fejl.</p>
     <table class="amt in">${names.map((n, i) => { const r = rows.find(x => x.navn === n);
       return `<tr><td>${esc(n)}${r && (r.hoestet || r.udkoert) ? `<br><span class="muted small">${kind === "udkoert" ? `høstet ${fmtAmt(r.hoestet)} · kørt ud ${fmtAmt(r.udkoert)}` : `høstet indtil nu ${fmtAmt(r.hoestet)}`}${r.plan ? " (planlagt " + fmtAmt(r.plan) + ")" : ""}</span>` : ""}</td>
-        <td><input type="text" inputmode="decimal" data-amt="${i}" placeholder="0"></td><td class="muted small">${esc(unit(n))}</td></tr>`; }).join("")}
-      <tr><td><input id="aOther" placeholder="Andet sortiment"></td><td><input type="text" inputmode="decimal" id="aOtherV" placeholder="0"></td><td class="muted small">m³</td></tr></table>
+        <td><input type="text" inputmode="decimal" data-amt="${i}" placeholder="0"></td><td class="muted small">${esc(unit(n))}</td></tr>
+        ${kind === "hoestet" ? `<tr class="len"><td colspan="3"><label class="muted small">Aflægningslængde</label><input data-len="${i}" value="${esc((r && (r.laengde || r.planLaengde)) || "")}" placeholder="fx 4,25 m eller 3,65/4,05 m"></td></tr>` : ""}`; }).join("")}
+      <tr><td><input id="aOther" placeholder="Andet sortiment"></td><td><input type="text" inputmode="decimal" id="aOtherV" placeholder="0"></td><td class="muted small">m³</td></tr>
+      ${kind === "hoestet" ? '<tr class="len"><td colspan="3"><label class="muted small">Aflægningslængde</label><input id="aOtherL" placeholder="fx 3,0 m"></td></tr>' : ""}</table>
     <textarea id="aText" placeholder="Evt. bemærkning (fx hvor stakkene ligger)"></textarea>
     <div class="stack"><button class="primary big" id="aSend">Send</button></div>`, true);
   $("#aBack").onclick = e => { e.stopPropagation(); drawJob(); };
@@ -2533,8 +2547,11 @@ function amountForm(t) {
     sheet.querySelectorAll("[data-amt]").forEach(inp => { const v = num(inp.value); if (v) m[names[+inp.dataset.amt]] = Math.round(v * 10) / 10; });
     const on = $("#aOther").value.trim(), ov = num($("#aOtherV").value); if (on && ov) m[on.slice(0, 80)] = (m[on.slice(0, 80)] || 0) + Math.round(ov * 10) / 10;
     if (!Object.keys(m).length) return toast("Skriv mindst én mængde");
+    const len = {};   // CLAUDE-1800: aflægningslængden for de sortimenter, der meldes
+    sheet.querySelectorAll("[data-len]").forEach(inp => { const n = names[+inp.dataset.len], v = inp.value.trim(); if (v && m[n]) len[n] = v.slice(0, 60); });
+    if (on && ov && $("#aOtherL")?.value.trim()) len[on.slice(0, 80)] = $("#aOtherL").value.trim().slice(0, 60);
     $("#aSend").disabled = true;
-    const item = { token: job.token, type: "maengde", art: kind, maengder: m, navn: myName(), tekst: $("#aText").value.trim(), t: Date.now() };
+    const item = { token: job.token, type: "maengde", art: kind, maengder: m, laengder: Object.keys(len).length ? len : null, navn: myName(), tekst: $("#aText").value.trim(), t: Date.now() };
     const q = JSON.parse(safeLS(QUEUE_KEY) || "[]"); q.push(item); safeLS(QUEUE_KEY, JSON.stringify(q));
     await flushQueue();
     const left = JSON.parse(safeLS(QUEUE_KEY) || "[]").some(x => x.t === item.t);
@@ -2550,7 +2567,7 @@ async function flushQueue() {
       if (item.token !== job.token) continue;
       try {
         const t = item.maengder   // CLAUDE-1799
-          ? await jobRpc("felt_opgave_maengde", { p_token: item.token, p_navn: item.navn, p_art: item.art, p_maengder: item.maengder, p_tekst: item.tekst || null })
+          ? await sendAmount(item)
           : await jobRpc("felt_opgave_meld", { p_token: item.token, p_type: item.type, p_navn: item.navn, p_tekst: item.tekst, p_foto: item.foto });
         if (t) { job.task = { ...job.task, ...t }; rememberLink({ ...(savedLinks().find(l => l.token === job.token) || {}), token: job.token, task: job.task }); }
         safeLS(QUEUE_KEY, JSON.stringify(JSON.parse(safeLS(QUEUE_KEY) || "[]").filter(x => x.t !== item.t)));
