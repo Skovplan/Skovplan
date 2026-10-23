@@ -2084,9 +2084,30 @@ function taskPoint(t) {
 function drawTaskMarkers() {
   if (taskLayer) map.removeLayer(taskLayer); taskLayer = null;
   if (!state.data) return;
-  taskLayer = L.layerGroup(openTasks().filter(t => !isContractor() || isMine(t)).map(t => [t, taskPoint(t)]).filter(([, p]) => p).map(([t, p]) =>
-    L.marker(p, { icon: L.divIcon({ className: "", html: `<div class="task-pin${isMine(t) ? " mine" : ""}${t.due && t.due < todayIso() ? " late" : ""}">⚑</div>`, iconSize: [26, 26], iconAnchor: [-6, 30] }) })
-      .on("click", () => taskForm(t)))).addTo(map);
+  // CLAUDE-1799: opgaver på samme sted (fx skovning, udkørsel og sporlægning i samme litra) samles i ét ikon med antal;
+  // et tryk viser listen, så man vælger den opgave, man skal arbejde på
+  const spots = new Map();
+  for (const t of openTasks().filter(t => !isContractor() || isMine(t))) {
+    const p = taskPoint(t); if (!p) continue;
+    const k = p[0].toFixed(4) + "," + p[1].toFixed(4);
+    if (!spots.has(k)) spots.set(k, { p, list: [] }); spots.get(k).list.push(t);
+  }
+  taskLayer = L.layerGroup([...spots.values()].map(({ p, list }) => {
+    const mine = list.some(isMine), late = list.some(t => t.due && t.due < todayIso());
+    return L.marker(p, { icon: L.divIcon({ className: "", html: `<div class="task-pin${mine ? " mine" : ""}${late ? " late" : ""}">${list.length > 1 ? list.length : "⚑"}</div>`, iconSize: [26, 26], iconAnchor: [-6, 30] }) })
+      .on("click", () => list.length === 1 ? taskForm(list[0]) : taskPickAt(list));
+  })).addTo(map);
+}
+function taskPickAt(list) {
+  const sorted = [...list].sort((a, b) => (b.assignee && sameName(b.assignee, myName())) - (a.assignee && sameName(a.assignee, myName())) || (a.due || "9999").localeCompare(b.due || "9999"));
+  openSheet(`<div class="head"><h3>${list.length} opgaver her</h3><button class="close">Luk</button></div>
+    <p class="muted small">Vælg den opgave, du skal arbejde på.</p>
+    ${byProject(sorted, taskLine, "list tasks")}`);
+  sheet.querySelectorAll(".tasks").forEach(ul => ul.addEventListener("click", async e => {
+    const tick = e.target.closest("[data-tick]");
+    if (tick) { const t = state.tasks.find(x => x.id === tick.dataset.tick); await toggleDone(t); return taskPickAt(list.map(x => state.tasks.find(y => y.id === x.id) || x)); }
+    const li = e.target.closest("[data-task]"); if (li) taskForm(state.tasks.find(x => x.id === li.dataset.task));
+  }));
 }
 function taskLine(t) {
   const late = t.due && t.due < todayIso() && t.status !== "udført";
@@ -2222,7 +2243,7 @@ async function syncTasks() {
    Meldingerne lægges i opgavens log i databasen; skovfogedens telefon får dem ved næste opgave-synk. */
 const STATUS = { "åben": ["Ikke startet", "st-open"], "i gang": ["I gang", "st-run"], problem: ["Problem", "st-prob"], "udført": ["Færdig", "st-done"] };
 const statusChip = s => { const [l, c] = STATUS[s] || STATUS["åben"]; return `<span class="stchip ${c}">${l}</span>`; };
-const LOG_LABEL = { start: "▶ Gik i gang", problem: "⚠ Problem", faerdig: "✓ Færdig", besked: "✎ Besked" };
+const LOG_LABEL = { start: "▶ Gik i gang", problem: "⚠ Problem", faerdig: "✓ Færdig", besked: "✎ Besked", maengde: "📦 Mængde" };
 const b64url = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const unb64url = s => decodeURIComponent(escape(atob(s.replace(/-/g, "+").replace(/_/g, "/"))));
 function standShape(key) {
@@ -2250,7 +2271,7 @@ function taskLogHtml(t) {
   const log = t.log || []; if (!log.length) return "";
   return `<h4>Meldinger</h4><ul class="list tlog">${[...log].reverse().map(e => `<li><div class="grow"><b>${LOG_LABEL[e.type] || esc(e.type)}</b> · ${esc(e.navn || "?")}
     <span class="muted small">${new Date(e.t).toLocaleString("da-DK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
-    ${e.tekst ? `<br>${esc(e.tekst)}` : ""}${e.foto ? `<br><img class="tfoto" data-foto="${esc(e.foto)}" alt="Foto">` : ""}</div></li>`).join("")}</ul>`;
+    ${e.maengder ? `<br>${e.art === "udkoert" ? "Kørt ud" : "Høstet"}: ${esc(amountText(e.maengder))}` : ""}${e.tekst ? `<br>${esc(e.tekst)}` : ""}${e.foto ? `<br><img class="tfoto" data-foto="${esc(e.foto)}" alt="Foto">` : ""}</div></li>`).join("")}</ul>`;
 }
 async function hydrateTaskPhotos(fetcher) {
   for (const img of sheet.querySelectorAll("img[data-foto]")) {
@@ -2284,6 +2305,8 @@ async function openJob(token, db64, crewToken) {
   state.jobPas = (job.crew && crew?.token === job.crew ? crew.pkg?.paspaa?.lag : null)
     || await db.get("kv", "pas:opg:" + token).catch(() => null) || (state.data ? pasOnly(state.data.extra?.lag) : null);
   pasActive.clear();
+  // CLAUDE-1799: basalt skovkort (litra, veje, liggepladser, grænse) fra pakken eller fra telefonen
+  state.jobKort = state.data ? null : (job.crew && crew?.token === job.crew ? crew.pkg?.paspaa?.kort : null) || await db.get("kv", "kort:opg:" + token).catch(() => null);
   $("#empty").classList.add("hidden"); document.body.classList.add("jobmode"); setBasemap(1);
   if (job.task) drawJob();
   await flushQueue();
@@ -2292,11 +2315,26 @@ async function openJob(token, db64, crewToken) {
     if (t.pdf?.fil) getPdf(t.pdf, tokenPdf(dbc, token)).catch(() => {}); }   // CLAUDE-1797: klar uden net
   catch (e) { if (!job.task) { openSheet(`<div class="head"><h3>Opgave</h3></div><p>${esc(/Failed to fetch/.test(e.message) ? "Ingen forbindelse. Prøv igen, når der er net." : e.message)}</p>`); return; } }
   if (!job.crew) jobRpc("felt_opgave_paspaa", { p_token: token }).then(d => {
-    if (!d?.lag || job?.token !== token) return;
+    if (job?.token !== token) return;
+    if (d?.kort) { state.jobKort = d.kort; db.put("kv", d.kort, "kort:opg:" + token).catch(() => {}); }   // CLAUDE-1799
+    if (!d?.lag) { if (d?.kort) drawJobMap(); return; }
     state.jobPas = pasOnly(d.lag); db.put("kv", state.jobPas, "pas:opg:" + token).catch(() => {});
     drawJobMap(); pasCheck();
   }).catch(() => { /* databasen har ikke pas-på endnu, eller ingen net */ });
   drawJob(true);
+}
+/* CLAUDE-1799: basalt skovkort til entreprenøren uden feltpakke: litraer (farve efter træart, litra-navn), veje,
+   kortlinjer, ejendomsgrænse, indgange og liggepladser. Kommer fra SkovPlan sammen med pas-på-lagene. */
+function drawBaseMap(group, kort) {
+  if (!kort) return;
+  if (kort.skovafdelinger?.features?.length) L.geoJSON(kort.skovafdelinger, { interactive: false,
+    style: f => ({ color: "#2b3a2f", weight: 1, fillColor: colorFor(f.properties?.a), fillOpacity: 0.45 }),
+    onEachFeature: (f, l) => { if (f.properties?.l) l.bindTooltip(esc(f.properties.l), { permanent: true, direction: "center", className: "litra-label" }); } }).addTo(group);
+  for (const name of ["kortlinjer", "adgangsveje", "ejendomsgraense", "indgange", "aflaegningspladser"]) {
+    if (!kort[name]?.features?.length) continue; const st = LAYERS[name].style;
+    L.geoJSON(kort[name], { style: () => st, pointToLayer: (f, ll) => L.circleMarker(ll, st), interactive: name === "aflaegningspladser",
+      onEachFeature: (f, l) => { if (name === "aflaegningspladser" && f.properties?.navn) l.bindTooltip(esc(f.properties.navn)); } }).addTo(group);
+  }
 }
 /* Pas-på-lagene på entreprenørens kort (samme stil som i feltpakken). */
 function drawPasLayers(group, lag) {
@@ -2310,6 +2348,7 @@ function drawJobMap(fit) {
   const t = job.task;
   if (jobLayer) map.removeLayer(jobLayer);
   jobLayer = L.layerGroup().addTo(map);
+  drawBaseMap(jobLayer, state.jobKort);
   drawPasLayers(jobLayer, state.jobPas);
   if (t.omraade) L.geoJSON(t.omraade, { style: { color: "#e8710a", weight: 3, fillOpacity: 0.15 }, interactive: false }).addTo(jobLayer);
   if (t.punkt) L.marker(t.punkt, { icon: L.divIcon({ className: "", html: '<div class="task-pin mine">⚑</div>', iconSize: [26, 26], iconAnchor: [-6, 30] }) }).addTo(jobLayer);
@@ -2344,6 +2383,7 @@ function drawJob(fit) {
       ${t.status !== "udført" ? '<button class="primary big" data-meld="faerdig">✓ Opgaven er færdig</button>' : ""}
       <button class="big jprob" data-meld="problem">⚠ Meld et problem</button>
       <button class="big" data-meld="besked">✎ Skriv en besked</button>
+      ${t.status !== "udført" ? `<button class="big" id="jAmount">📦 Meld ${amountKind(t) === "udkoert" ? "udkørt" : "høstet"} mængde</button>` : ""}
     </div>
     ${taskLogHtml(t)}
     ${job.crew ? '<button class="big ghost" id="jCrew">‹ Alle opgaver i pakken</button>' : state.data && isContractor() ? '<button class="big ghost" id="jAll">‹ Alle mine opgaver</button>' : ""}
@@ -2358,11 +2398,15 @@ function drawJob(fit) {
   sheet.querySelector(".jbtns").onclick = e => { const b = e.target.closest("[data-meld]"); if (b) meldForm(b.dataset.meld); };
   hydrateTaskPhotos(navn => jobRpc("felt_opgave_foto", { p_token: job.token, p_navn: navn }));
   wireJobExtras(t, tokenPdf(job.db, job.token), () => { closeSheet(); jobChip(); });
+  $("#jAmount")?.addEventListener("click", () => amountForm(t));
 }
 /* ---------- CLAUDE-1797: arbejdskort (PDF) og liggepladser fra SkovPlan
    SkovPlan lægger arbejdskortet på opgaven ({pdf: {fil, titel, kb}}) og liggepladserne ({liggepladser: [{navn, lat, lon}]}).
    PDF'en hentes i stykker og gemmes på telefonen, så den kan åbnes uden net, når den er hentet én gang. */
 function jobExtrasHtml(t) {
+  return amountHtml(t) + jobExtrasHtml0(t);
+}
+function jobExtrasHtml0(t) {
   const lp = (t.liggepladser || []).filter(p => p && isFinite(p.lat) && isFinite(p.lon));
   return `${lp.map((p, i) => `<div class="lpline"><span class="lp-pin">L</span><div class="grow"><b>${/^liggeplads/i.test(p.navn || "") ? esc(p.navn) : "Liggeplads: " + esc(p.navn || "")}</b></div>
       <button data-lpvis="${i}">Vis</button><a class="btn" href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lon}" target="_blank" rel="noopener">Kør hertil</a></div>`).join("")}
@@ -2449,6 +2493,55 @@ function meldForm(type) {
     drawJob();
   };
 }
+/* ---------- CLAUDE-1799: høstede og udkørte mængder pr. sortiment
+   Skoveren melder høstet (fx korttømmer 12 m³), udkøreren udkørt. Tallene lægges sammen i databasen for opgaven og for
+   hele projektet (alle opgaver under samme hovedopgave), så udkøreren ser, hvad der er høstet, og SkovPlan kan følge med. */
+const amountKind = t => /udkør|kørsel|transport|flistransport/i.test(t.aktivitet || t.title || "") ? "udkoert" : "hoestet";
+const fmtAmt = v => (Math.round(v * 10) / 10).toLocaleString("da-DK", { maximumFractionDigits: 1 });
+const amountText = m => Object.entries(m || {}).map(([k, v]) => `${k} ${fmtAmt(v)}`).join(", ");
+function amountRows(t) {
+  const pm = t.projekt_maengder || t.maengder || {}, sorts = (t.sortimenter || []).filter(x => x?.navn);
+  const names = [...new Set([...sorts.map(x => x.navn), ...Object.keys(pm.hoestet || {}), ...Object.keys(pm.udkoert || {})])];
+  return names.map(n => { const s = sorts.find(x => x.navn === n) || {};
+    return { navn: n, plan: +s.plan || 0, enhed: s.enhed || "m³", hoestet: +(pm.hoestet || {})[n] || 0, udkoert: +(pm.udkoert || {})[n] || 0 }; });
+}
+function amountHtml(t) {
+  const rows = amountRows(t); if (!rows.some(r => r.hoestet || r.udkoert)) return "";
+  const sum = k => rows.reduce((a, r) => a + r[k], 0), hasPlan = rows.some(r => r.plan);
+  return `<h4>Mængder i ${t.projekt?.navn ? "projektet" : "opgaven"}</h4><table class="amt"><tr><th>Sortiment</th>${hasPlan ? "<th>Planlagt</th>" : ""}<th>Høstet</th><th>Kørt ud</th></tr>
+    ${rows.map(r => `<tr><td>${esc(r.navn)}</td>${hasPlan ? `<td>${r.plan ? fmtAmt(r.plan) : ""}</td>` : ""}<td>${r.hoestet ? fmtAmt(r.hoestet) : ""}</td><td>${r.udkoert ? fmtAmt(r.udkoert) : ""}</td></tr>`).join("")}
+    <tr class="sum"><td>I alt</td>${hasPlan ? `<td>${fmtAmt(sum("plan"))}</td>` : ""}<td>${fmtAmt(sum("hoestet"))}</td><td>${fmtAmt(sum("udkoert"))}</td></tr></table>
+    ${sum("hoestet") > sum("udkoert") ? `<p class="muted small">Ligger i skoven: ca. ${fmtAmt(sum("hoestet") - sum("udkoert"))} m³</p>` : ""}`;
+}
+const AMOUNT_DEFAULTS = ["Savtræ", "Korttømmer", "Emballage", "Industritræ", "Brænde", "Flis"];
+function amountForm(t) {
+  if (!askName()) return toast("Skriv dit navn, så skovfogeden ved, hvem der melder");
+  const kind = amountKind(t), rows = amountRows(t);
+  const names = rows.length ? rows.map(r => r.navn) : AMOUNT_DEFAULTS;
+  const unit = n => rows.find(r => r.navn === n)?.enhed || "m³";
+  openSheet(`<div class="head"><h3>${kind === "udkoert" ? "Kørt ud" : "Høstet"}</h3><button class="close" id="aBack">Tilbage</button></div>
+    <p class="muted small">Skriv det, du har ${kind === "udkoert" ? "kørt ud" : "høstet"} siden sidst, pr. sortiment. Tallene lægges oven i det, der er meldt før. Et minus retter en fejl.</p>
+    <table class="amt in">${names.map((n, i) => { const r = rows.find(x => x.navn === n);
+      return `<tr><td>${esc(n)}${r && (r.hoestet || r.udkoert) ? `<br><span class="muted small">${kind === "udkoert" ? `høstet ${fmtAmt(r.hoestet)} · kørt ud ${fmtAmt(r.udkoert)}` : `høstet indtil nu ${fmtAmt(r.hoestet)}`}${r.plan ? " (planlagt " + fmtAmt(r.plan) + ")" : ""}</span>` : ""}</td>
+        <td><input type="text" inputmode="decimal" data-amt="${i}" placeholder="0"></td><td class="muted small">${esc(unit(n))}</td></tr>`; }).join("")}
+      <tr><td><input id="aOther" placeholder="Andet sortiment"></td><td><input type="text" inputmode="decimal" id="aOtherV" placeholder="0"></td><td class="muted small">m³</td></tr></table>
+    <textarea id="aText" placeholder="Evt. bemærkning (fx hvor stakkene ligger)"></textarea>
+    <div class="stack"><button class="primary big" id="aSend">Send</button></div>`, true);
+  $("#aBack").onclick = e => { e.stopPropagation(); drawJob(); };
+  $("#aSend").onclick = async () => {
+    const m = {}; const num = v => parseFloat(String(v).replace(",", "."));
+    sheet.querySelectorAll("[data-amt]").forEach(inp => { const v = num(inp.value); if (v) m[names[+inp.dataset.amt]] = Math.round(v * 10) / 10; });
+    const on = $("#aOther").value.trim(), ov = num($("#aOtherV").value); if (on && ov) m[on.slice(0, 80)] = (m[on.slice(0, 80)] || 0) + Math.round(ov * 10) / 10;
+    if (!Object.keys(m).length) return toast("Skriv mindst én mængde");
+    $("#aSend").disabled = true;
+    const item = { token: job.token, type: "maengde", art: kind, maengder: m, navn: myName(), tekst: $("#aText").value.trim(), t: Date.now() };
+    const q = JSON.parse(safeLS(QUEUE_KEY) || "[]"); q.push(item); safeLS(QUEUE_KEY, JSON.stringify(q));
+    await flushQueue();
+    const left = JSON.parse(safeLS(QUEUE_KEY) || "[]").some(x => x.t === item.t);
+    toast(left ? "Gemt på telefonen. Sendes, når der er net." : "Mængden er sendt", 5000);
+    drawJob();
+  };
+}
 let flushing = false;
 async function flushQueue() {
   if (flushing || !job || !navigator.onLine) return; flushing = true;
@@ -2456,7 +2549,9 @@ async function flushQueue() {
     for (const item of JSON.parse(safeLS(QUEUE_KEY) || "[]")) {
       if (item.token !== job.token) continue;
       try {
-        const t = await jobRpc("felt_opgave_meld", { p_token: item.token, p_type: item.type, p_navn: item.navn, p_tekst: item.tekst, p_foto: item.foto });
+        const t = item.maengder   // CLAUDE-1799
+          ? await jobRpc("felt_opgave_maengde", { p_token: item.token, p_navn: item.navn, p_art: item.art, p_maengder: item.maengder, p_tekst: item.tekst || null })
+          : await jobRpc("felt_opgave_meld", { p_token: item.token, p_type: item.type, p_navn: item.navn, p_tekst: item.tekst, p_foto: item.foto });
         if (t) { job.task = { ...job.task, ...t }; rememberLink({ ...(savedLinks().find(l => l.token === job.token) || {}), token: job.token, task: job.task }); }
         safeLS(QUEUE_KEY, JSON.stringify(JSON.parse(safeLS(QUEUE_KEY) || "[]").filter(x => x.t !== item.t)));
       } catch (e) {
@@ -2529,6 +2624,7 @@ function drawCrew(fit) {
   crew.shown = true;
   if (crewLayer) map.removeLayer(crewLayer);
   crewLayer = L.layerGroup().addTo(map);
+  if (!state.data) drawBaseMap(crewLayer, crew.pkg.paspaa?.kort);
   drawPasLayers(crewLayer, state.jobPas);
   const tasks = crewTasks(), open = tasks.filter(t => t.status !== "udført"), done = tasks.filter(t => t.status === "udført");
   const bounds = L.latLngBounds([]);
