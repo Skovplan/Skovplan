@@ -607,7 +607,7 @@ function kmFromForest(lat, lon) {
    entreprenørens opgavelink/pakke. Alt regnes på telefonen, så det virker uden net. */
 const PAS_KEY = "pasPaa";
 const PAS_SCALE = { kort: 0.6, normal: 1, lang: 2 };
-function pasCfg() { let c = {}; try { c = JSON.parse(safeLS(PAS_KEY) || "{}") || {}; } catch (e) { /* standard */ } return { on: c.on !== false, lyd: c.lyd !== false, afstand: PAS_SCALE[c.afstand] ? c.afstand : "normal" }; }
+function pasCfg() { let c = {}; try { c = JSON.parse(safeLS(PAS_KEY) || "{}") || {}; } catch (e) { /* standard */ } return { on: c.on === undefined ? isContractor() : c.on !== false, afstand: PAS_SCALE[c.afstand] ? c.afstand : "normal" }; }
 function setPasCfg(ch) { safeLS(PAS_KEY, JSON.stringify({ ...pasCfg(), ...ch })); }
 const pasText = (v, p) => typeof v === "function" ? v(p || {}) : v || "";
 /* Det lag, der gælder nu: entreprenørens (opgave/pakke) eller feltpakkens. */
@@ -692,21 +692,21 @@ function pasCheck() {
   const top = hits.find(h => h.id !== pasMuted);
   if (top) pasBanner(top, hits.length); else { bar.classList.add("hidden"); pasShown = null; }
 }
-function pasAlarm(h) {
-  const cfg = pasCfg();
-  if (navigator.vibrate) navigator.vibrate(h.def.pas.lvl > 1 ? [350, 150, 350, 150, 350] : [300, 150, 300]);
-  if (!cfg.lyd) return;
-  try {
-    const ac = pasAlarm.ac || (pasAlarm.ac = new (window.AudioContext || window.webkitAudioContext)());
-    ac.resume?.();
-    [0, 0.28].slice(0, h.def.pas.lvl > 1 ? 2 : 1).forEach(t0 => {
-      const o = ac.createOscillator(), g = ac.createGain(); o.type = "square"; o.frequency.value = 880;
-      g.gain.setValueAtTime(0.0001, ac.currentTime + t0); g.gain.exponentialRampToValueAtTime(0.25, ac.currentTime + t0 + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + t0 + 0.22);
-      o.connect(g).connect(ac.destination); o.start(ac.currentTime + t0); o.stop(ac.currentTime + t0 + 0.24);
-    });
-  } catch (e) { /* uden lyd */ }
+/* Notifikation på telefonen (ingen vibration eller bip fra appen). Kræver, at brugeren har tilladt notifikationer. */
+const notifyState = () => !("Notification" in window) ? "nej" : Notification.permission;
+async function askNotify() {
+  if (notifyState() !== "default") return notifyState();
+  try { return await Notification.requestPermission(); } catch (e) { return "denied"; }
 }
+function pasAlarm(h) {
+  if (notifyState() !== "granted") return;
+  const title = "Pas på: " + pasText(h.def.pas.what, h.p);
+  const body = `${h.d < 1 ? "Du står i området" : Math.round(h.d) + " m væk"}. ${pasText(h.def.pas.why, h.p)}`;
+  const opts = { body, tag: "paspaa-" + h.id, icon: "icon-192.png", badge: "favicon.png", renotify: true };
+  navigator.serviceWorker?.ready.then(r => r.showNotification(title, opts)).catch(() => { try { new Notification(title, opts); } catch (e) { /* ingen notifikation */ } });
+}
+const notifyBtn = () => pasCfg().on && notifyState() === "default" ? '<button class="big" id="pNotify">🔔 Tillad notifikationer ved pas på</button>' : "";
+function wireNotify(redraw) { $("#pNotify")?.addEventListener("click", async () => { const r = await askNotify(); toast(r === "granted" ? "Du får en notifikation, når du nærmer dig et hensyn" : "Notifikationer er ikke tilladt. Banneret i appen vises stadig.", 5000); redraw(); }); }
 function pasBanner(h, n) {
   const bar = $("#pasBar"); pasShown = h;
   const dir = h.d > 3 && h.at ? " mod " + compassName((bearingArr([state.me.lat, state.me.lon], h.at) + 360) % 360) : "";
@@ -735,9 +735,10 @@ function pasSheet(back) {
   items.forEach(it => { counts[it.key] = (counts[it.key] || 0) + 1; });
   const near = state.me ? pasNear(state.me.lat, state.me.lon, 300).slice(0, 12) : [];
   openSheet(`<div class="head"><h3>Pas på</h3><button class="close" id="pBack">${back ? "Tilbage" : "Luk"}</button></div>
-    <p class="muted">Telefonen bipper og vibrerer, når du kommer tæt på et hensyn. Det virker uden net, men kun mens appen er åben.</p>
+    <p class="muted">Telefonen viser en notifikation og et banner, når du kommer tæt på et hensyn. Det er slået til for entreprenører.
+      Det virker uden net, men kun mens appen er åben.</p>
     <label class="check"><input type="checkbox" id="pOn" ${cfg.on ? "checked" : ""}> Advar mig, når jeg nærmer mig et hensyn</label>
-    <label class="check"><input type="checkbox" id="pLyd" ${cfg.lyd ? "checked" : ""}> Med lyd (ellers kun vibration)</label>
+    ${notifyBtn()}${cfg.on && notifyState() === "denied" ? '<p class="muted small">Notifikationer er blokeret i telefonens indstillinger, så kun banneret vises.</p>' : ""}
     <label>Advar i god tid</label>
     <div class="seg" id="pAfst">${[["kort", "Tæt på"], ["normal", "Normal"], ["lang", "Langt fra"]].map(([k, l]) => `<button data-a="${k}" class="${k === cfg.afstand ? "on" : ""}">${l}</button>`).join("")}</div>
     <h4>Tæt på dig</h4>
@@ -746,8 +747,8 @@ function pasSheet(back) {
     ${Object.keys(counts).length ? `<ul class="list">${Object.entries(counts).map(([k, c]) => `<li><span class="pdot lvl${EXTRA[k].pas.lvl}"></span><div class="grow">${esc(EXTRA[k].name)} <span class="muted small">(${c}) · advarer ${EXTRA[k].pas.r ? "fra " + Math.round(EXTRA[k].pas.r * PAS_SCALE[cfg.afstand]) + " m" : "inde i området"}</span></div></li>`).join("")}</ul>`
       : `<p class="muted">${document.body.classList.contains("jobmode") ? "Skovfogeden har ikke lagt pas-på-lag på opgaven endnu." : "Feltpakken har ingen pas-på-lag. Lav en ny feltpakke i SkovPlan, så kommer de med."}</p>`}`, true);
   $("#pBack").onclick = e => { if (back) { e.stopPropagation(); back(); } };
-  $("#pOn").onchange = e => { setPasCfg({ on: e.target.checked }); pasActive.clear(); pasCheck(); };
-  $("#pLyd").onchange = e => { setPasCfg({ lyd: e.target.checked }); if (e.target.checked) pasAlarm({ def: { pas: { lvl: 1 } } }); };
+  $("#pOn").onchange = async e => { setPasCfg({ on: e.target.checked }); pasActive.clear(); if (e.target.checked) await askNotify(); pasCheck(); pasSheet(back); };
+  wireNotify(() => pasSheet(back));
   $("#pAfst").onclick = e => { const b = e.target.closest("[data-a]"); if (!b) return; setPasCfg({ afstand: b.dataset.a }); pasActive.clear(); pasCheck(); pasSheet(back); };
   sheet.querySelector(".pasnear")?.addEventListener("click", e => { const li = e.target.closest("[data-i]"); if (li) { closeSheet(); if (job) jobChip(); pasFlash(near[+li.dataset.i]); } });
 }
@@ -2324,6 +2325,7 @@ function drawJob(fit) {
     ${t.punkt ? `<div class="actions"><button data-jgo>➜ Vis vej i appen</button><a class="btn" href="https://www.google.com/maps/dir/?api=1&destination=${t.punkt[0]},${t.punkt[1]}" target="_blank" rel="noopener">Google Maps</a></div>` : ""}
     ${queued ? `<p class="warn">${queued} melding${queued === 1 ? "" : "er"} sendes, når der er net.</p>` : ""}
     <button class="pasline ${red ? "lvl2" : pn.length ? "lvl1" : ""}" id="jPas">⚠ ${pn.length ? `Pas på: ${pn.length} hensyn ved opgaven${red ? ` (${red} må ikke røres)` : ""}` : "Pas på: ingen kendte hensyn ved opgaven"}${pasCfg().on ? "" : " · advarsler er slået fra"}</button>
+    ${notifyBtn()}
     <div class="stack jbtns">
       ${t.status === "åben" || !t.status ? '<button class="primary big" data-meld="start">▶ Jeg går i gang</button>' : ""}
       ${t.status !== "udført" ? '<button class="primary big" data-meld="faerdig">✓ Opgaven er færdig</button>' : ""}
@@ -2336,6 +2338,7 @@ function drawJob(fit) {
   $("#jAll")?.addEventListener("click", leaveJob);
   $("#jCrew")?.addEventListener("click", backToCrew);
   $("#jPas").onclick = () => pasSheet(() => drawJob());
+  wireNotify(() => drawJob());
   $("#jHide").onclick = e => { e.stopPropagation(); closeSheet(); jobChip(); };
   $("#jName").onclick = () => { askName(true); drawJob(); };
   sheet.querySelector("[data-jgo]")?.addEventListener("click", () => { closeSheet(); jobChip(); goTo(t.punkt[0], t.punkt[1], t.title); });
@@ -2469,12 +2472,14 @@ function drawCrew(fit) {
     ${open.length ? `<ul class="list tasks crew">${open.map(line).join("")}</ul>` : '<p class="muted">Ingen åbne opgaver til dig lige nu.</p>'}
     ${done.length ? `<h4>Færdige</h4><ul class="list tasks crew">${done.map(line).join("")}</ul>` : ""}
     <button class="pasline ${items ? "lvl1" : ""}" id="cPas">⚠ ${items ? `Pas på: ${items} hensyn på ejendommen. Telefonen advarer, når du kommer tæt på.` : "Pakken har ingen pas-på-lag endnu."}</button>
+    ${notifyBtn()}
     <div class="actions"><button id="cReload">⟳ Hent nyeste</button></div>
     <p class="muted small">Opgaver, områder og pas-på-lag er gemt på telefonen og virker uden net. Baggrundskortet gemmes, når du har set det med net,
       så kig kortet igennem ved opgaverne, inden du kører ud. Du er <b>${esc(myName() || "ikke navngivet")}</b> · <button class="linklike" id="cName">skift navn</button></p>`, true);
   $("#cHide").onclick = e => { e.stopPropagation(); closeSheet(); crewChip(); };
   $("#cPas").onclick = () => pasSheet(() => drawCrew());
   $("#cReload").onclick = () => openCrew(crew.token, crew.db64);
+  wireNotify(() => drawCrew());
   $("#cName").onclick = () => { askName(true); drawCrew(); };
   sheet.querySelectorAll(".crew").forEach(ul => ul.onclick = e => { const li = e.target.closest("[data-crew]"); if (li) openJob(li.dataset.crew, crew.db64, crew.token); });
 }

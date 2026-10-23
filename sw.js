@@ -1,5 +1,5 @@
 /* SkovPlan Felt – service worker: appen virker uden net, og kortfliser gemmes, når de er set. */
-const APP = "skovplan-felt-v30";
+const APP = "skovplan-felt-v31";
 const TILES = "skovplan-felt-tiles";
 const SHELL = ["./", "index.html", "app.js", "style.css", "manifest.webmanifest", "favicon.png", "apple-touch-icon.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png",
   "logo.png", "logo-symbol.png",
@@ -40,3 +40,8 @@ async function trim(c) {
   if (trimming) return; trimming = true;
   try { const keys = await c.keys(); for (let i = 0; i < keys.length - MAX_TILES; i++) await c.delete(keys[i]); } finally { trimming = false; }
 }
+/* CLAUDE-1795: tryk på en pas-på-notifikation åbner appen */
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(cs => cs.length ? cs[0].focus() : self.clients.openWindow("./")));
+});
