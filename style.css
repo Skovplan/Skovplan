@@ -389,3 +389,6 @@ table.amt th:first-child, table.amt td:first-child { text-align: left; }
 table.amt tr.sum td { font-weight: 700; border-bottom: none; }
 table.amt.in input { width: 90px; text-align: right; }
 table.amt.in td:first-child input { width: 100%; text-align: left; }
+table.amt.in tr.len td { border-bottom: 1px solid #e3e8e4; padding-top: 0; }
+table.amt.in tr.len input { width: 100%; text-align: left; }
+table.amt.in tr:has(+ tr.len) td { border-bottom: none; }
