@@ -45,5 +45,11 @@ Appen kan også åbne `skovdriftsplan.gpkg` og `ortofoto_feltapp.mbtiles` hver f
 - Arbejdskortet (PDF med kort) lægges på opgaverne, når det laves i SkovPlan. Knappen «📄 Arbejdskort (PDF)» henter det i stykker og gemmer det på telefonen. Entreprenørpakken henter arbejdskortene i baggrunden, så de kan åbnes uden net.
 - Kræver `skovplan_felt_arbejdskort.sql` i Supabase.
 
+## Mængder, opgaver på samme sted og skovkort (CLAUDE-1799)
+- Ligger flere opgaver samme sted (fx skovning, udkørsel og sporlægning i 3g), viser kortet ét ikon med antallet. Et tryk viser listen, så man vælger sin opgave.
+- «📦 Meld høstet mængde» (skover) og «📦 Meld udkørt mængde» (udkører): m³ pr. sortiment fra SkovPlan (eller eget sortiment). Tallene lægges sammen for opgaven og hele projektet. Opgaven viser planlagt, høstet og kørt ud, og hvor meget der ligger i skoven. Meldingen gemmes på telefonen uden net.
+- Entreprenørens link viser et basalt skovkort (litraer, veje, kortlinjer, grænse, indgange og liggepladser) fra SkovPlan.
+- Kræver `skovplan_felt_maengder_og_kort.sql` i Supabase.
+
 ## Hosting
 GitHub Pages fra `main`. Alle biblioteker ligger i `lib/`, så intet hentes udefra ud over OpenStreetMap-fliser.
