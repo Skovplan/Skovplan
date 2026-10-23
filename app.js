@@ -450,6 +450,33 @@ function hsvHex(h, s, v) {
   return "#" + [r, g, b].map(t => Math.round((t + m) * 255).toString(16).padStart(2, "0")).join("");
 }
 const colorFor = art => { const k = normName(art); return k ? (COLOR_LOOKUP[k] || autoColors[k] || NO_SPECIES_COLOR) : NO_SPECIES_COLOR; };
+/* CLAUDE-1892: SkovPlans egne kortfarver (feltpakken / entreprenørens skovkort har dem med): litrafarver med den valgte
+   gennemsigtighed, veje og kortlinjer pr. linjetype og ejendomsgrænsen. Uden dem bruges appens standardfarver. */
+const farverIdx = new WeakMap();
+function farverTypes(def) {
+  if (!def?.typer) return null;
+  let m = farverIdx.get(def);
+  if (!m) { m = Object.fromEntries(Object.entries(def.typer).map(([k, v]) => [normName(k), v])); farverIdx.set(def, m); }
+  return m;
+}
+function standFill(F, art) {
+  const t = farverTypes(F?.litra); if (!t) return null;
+  const k = normName(art); return (k && t[k]) || F.litra.andet || null;
+}
+function lineStrokes(def, p) {
+  const t = farverTypes(def); if (!t) return null;
+  const v = normName(p?.[def.felt] ?? p?.linjetype ?? p?.vejtype);
+  return v ? (t[v] || []) : (def.andet || []);   // en type SkovPlan ikke tegner, vises heller ikke i appen
+}
+const DASH = { dash: "8 5", dot: "1 5" };
+const strokeStyle = s => ({ color: s.c, opacity: s.o ?? 1, weight: s.w || 2, dashArray: DASH[s.d] || null, lineCap: "round", lineJoin: "round", fill: false });
+/* Linjelag tegnet som i SkovPlan: én Leaflet-gruppe pr. streg (fx vejens mørke kant under alle lyse kerner). */
+function addFarverLines(group, geo, def, interactive) {
+  const n = Math.max(0, ...geo.features.map(f => (lineStrokes(def, f.properties) || []).length));
+  for (let i = 0; i < n; i++) L.geoJSON(geo, { interactive: !!interactive, filter: f => (lineStrokes(def, f.properties) || []).length > i,
+    style: f => strokeStyle(lineStrokes(def, f.properties)[i]) }).addTo(group);
+}
+function boundaryStyle(F, st) { const b = F?.ejendomsgraense; return b ? { color: b.k, opacity: b.ka ?? 1, weight: b.w || 2, fill: false, dashArray: null } : st; }
 
 function drawData() {
   setTimeout(updateQuick);
@@ -457,8 +484,10 @@ function drawData() {
   (state.extraLabels || []).forEach(t => t.remove()); state.extraLabels = [];
   if (!state.data) { state.standLayer = null; return; }
   const L_ = state.data.layers;
+  const F = state.data.pakke?.farver;   // CLAUDE-1892
   for (const name of ["kortlinjer", "adgangsveje", "ejendomsgraense", "indgange"]) {
-    if (!L_[name]) continue; const st = LAYERS[name].style;
+    if (!L_[name]) continue; const st = name === "ejendomsgraense" ? boundaryStyle(F, LAYERS[name].style) : LAYERS[name].style;
+    if (F?.[name]?.typer) { const g = L.layerGroup().addTo(map); addFarverLines(g, L_[name], F[name]); state.overlays.push(g); continue; }
     const lyr = L.geoJSON(L_[name], { style: () => st, pointToLayer: (f, ll) => L.circleMarker(ll, st), interactive: false }).addTo(map);
     state.overlays.push(lyr);
   }
@@ -500,8 +529,10 @@ function drawData() {
 function standStyle(f, counts) {
   const sel = state.selected && standKey(state.selected.properties) === standKey(f.properties);
   const has = counts[standKey(f.properties)];
-  return { color: sel ? "#0b57d0" : has ? "#7a1fa2" : "#232323", weight: sel ? 4 : has ? 2.5 : 1,
-    fillColor: colorFor(f.properties["træart"]), fillOpacity: state.basemap === 2 ? 0.85 : 0.66 };
+  const sf = standFill(state.data?.pakke?.farver, f.properties["træart"]);   // CLAUDE-1892: som i SkovPlan
+  const fillOpacity = sf ? (state.basemap === 2 ? Math.max(sf.fa, 0.85) : sf.fa) : state.basemap === 2 ? 0.85 : 0.66;
+  return { color: sel ? "#0b57d0" : has ? "#7a1fa2" : sf ? sf.k : "#232323", weight: sel ? 4 : has ? 2.5 : 1,
+    opacity: sel || has || !sf ? 1 : Math.max(sf.ka, 0.35), fillColor: sf ? sf.f : colorFor(f.properties["træart"]), fillOpacity };
 }
 function restyle() { if (!state.standLayer) return; const c = countByStand(); state.standLayer.eachLayer(l => l.setStyle(standStyle(l.feature, c))); }
 /* Mærkaten som på SkovPlans kort (litra, art, år, §3), hvis feltpakken har den; ellers afd+litra.
@@ -2327,11 +2358,15 @@ async function openJob(token, db64, crewToken) {
    kortlinjer, ejendomsgrænse, indgange og liggepladser. Kommer fra SkovPlan sammen med pas-på-lagene. */
 function drawBaseMap(group, kort) {
   if (!kort) return;
+  const F = kort.farver;   // CLAUDE-1892: SkovPlans farver
   if (kort.skovafdelinger?.features?.length) L.geoJSON(kort.skovafdelinger, { interactive: false,
-    style: f => ({ color: "#2b3a2f", weight: 1, fillColor: colorFor(f.properties?.a), fillOpacity: 0.45 }),
+    style: f => { const sf = standFill(F, f.properties?.a);
+      return sf ? { color: sf.k, opacity: Math.max(sf.ka, 0.35), weight: 1, fillColor: sf.f, fillOpacity: sf.fa }
+        : { color: "#2b3a2f", weight: 1, fillColor: colorFor(f.properties?.a), fillOpacity: 0.45 }; },
     onEachFeature: (f, l) => { if (f.properties?.l) l.bindTooltip(esc(f.properties.l), { permanent: true, direction: "center", className: "litra-label" }); } }).addTo(group);
   for (const name of ["kortlinjer", "adgangsveje", "ejendomsgraense", "indgange", "aflaegningspladser"]) {
-    if (!kort[name]?.features?.length) continue; const st = LAYERS[name].style;
+    if (!kort[name]?.features?.length) continue; const st = name === "ejendomsgraense" ? boundaryStyle(F, LAYERS[name].style) : LAYERS[name].style;
+    if (F?.[name]?.typer) { addFarverLines(group, kort[name], F[name]); continue; }
     L.geoJSON(kort[name], { style: () => st, pointToLayer: (f, ll) => L.circleMarker(ll, st), interactive: name === "aflaegningspladser",
       onEachFeature: (f, l) => { if (name === "aflaegningspladser" && f.properties?.navn) l.bindTooltip(esc(f.properties.navn)); } }).addTo(group);
   }
