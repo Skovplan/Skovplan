@@ -530,7 +530,8 @@ function standStyle(f, counts) {
   const sel = state.selected && standKey(state.selected.properties) === standKey(f.properties);
   const has = counts[standKey(f.properties)];
   const sf = standFill(state.data?.pakke?.farver, f.properties["træart"]);   // CLAUDE-1892: som i SkovPlan
-  const fillOpacity = sf ? (state.basemap === 2 ? Math.max(sf.fa, 0.85) : sf.fa) : state.basemap === 2 ? 0.85 : 0.66;
+  // CLAUDE-2160: kun SkovPlans farve følger med; gennemsigtigheden er appens egen, så litraerne altid er farvet i felten
+  const fillOpacity = state.basemap === 2 ? 0.85 : 0.66;
   return { color: sel ? "#0b57d0" : has ? "#7a1fa2" : sf ? sf.k : "#232323", weight: sel ? 4 : has ? 2.5 : 1,
     opacity: sel || has || !sf ? 1 : Math.max(sf.ka, 0.35), fillColor: sf ? sf.f : colorFor(f.properties["træart"]), fillOpacity };
 }
@@ -2361,7 +2362,7 @@ function drawBaseMap(group, kort) {
   const F = kort.farver;   // CLAUDE-1892: SkovPlans farver
   if (kort.skovafdelinger?.features?.length) L.geoJSON(kort.skovafdelinger, { interactive: false,
     style: f => { const sf = standFill(F, f.properties?.a);
-      return sf ? { color: sf.k, opacity: Math.max(sf.ka, 0.35), weight: 1, fillColor: sf.f, fillOpacity: sf.fa }
+      return sf ? { color: sf.k, opacity: Math.max(sf.ka, 0.35), weight: 1, fillColor: sf.f, fillOpacity: 0.45 }   // CLAUDE-2160
         : { color: "#2b3a2f", weight: 1, fillColor: colorFor(f.properties?.a), fillOpacity: 0.45 }; },
     onEachFeature: (f, l) => { if (f.properties?.l) l.bindTooltip(esc(f.properties.l), { permanent: true, direction: "center", className: "litra-label" }); } }).addTo(group);
   for (const name of ["kortlinjer", "adgangsveje", "ejendomsgraense", "indgange", "aflaegningspladser"]) {
