@@ -361,6 +361,10 @@ function standSummary(regs) {
 /* ------------------------------------------------------------------ state + kort */
 const state = { data: null, regs: [], allRegs: [], selected: null, me: null, standLayer: null, overlays: [], basemap: 0 };
 const map = L.map("map", { zoomControl: false, attributionControl: true, maxZoom: 21 }).setView([56.0, 9.5], 7);
+/* CLAUDE-2170: litranavnene ligger over fladerne, men under opgavenåle, indgange og GPS-prik (tooltip-laget ligger øverst). */
+map.createPane("litraLabels");
+map.getPane("litraLabels").style.zIndex = 450;
+map.getPane("litraLabels").style.pointerEvents = "none";
 L.control.zoom({ position: "bottomright" }).addTo(map);
 /* Ortofoto fra SkovPlan (MBTiles, gemt i telefonens IndexedDB) */
 /* Fliserne tegnes på et lærred, så kanten af ortofotoet (sort i JPEG-fliser) males grå uden for fotoets udstrækning. */
@@ -497,7 +501,7 @@ function drawData() {
     style: f => standStyle(f, counts),
     onEachFeature: (f, lyr) => {
       lyr.on("click", () => selectStand(f));
-      lyr.bindTooltip(labelHtml(f.properties, true, counts), { permanent: true, direction: "center", className: "litra-label" });
+      lyr.bindTooltip(labelHtml(f.properties, true, counts), { permanent: true, direction: "center", className: "litra-label", pane: "litraLabels" });
     },
   }).addTo(map);
   state.overlays.push(state.standLayer);
@@ -556,11 +560,16 @@ function updateLabels() {
   if (show) requestAnimationFrame(declutter);
 }
 /* Som i SkovPlan: mærkater må ikke overlappe; det største litra vinder, de mindre skjules. */
+const layerArea = l => { const b = l.getBounds(); return (b.getEast() - b.getWest()) * (b.getNorth() - b.getSouth()); };
 function declutter() {
   if (!state.standLayer) return;
-  const area = l => { const b = l.getBounds(); return (b.getEast() - b.getWest()) * (b.getNorth() - b.getSouth()); };
+  const ls = []; state.standLayer.eachLayer(l => ls.push(l));
+  declutterLabels(ls, layerArea);
+}
+/* CLAUDE-2170: fælles for feltpakkens og entreprenørens kort; højeste vægt vinder. */
+function declutterLabels(layers, weight) {
   const items = [];
-  state.standLayer.eachLayer(l => { const el = l.getTooltip()?.getElement(); if (el) { el.style.visibility = ""; items.push([area(l), el]); } });
+  layers.forEach(l => { const el = l.getTooltip()?.getElement(); if (el) { el.style.visibility = ""; items.push([weight(l), el]); } });
   items.sort((a, b) => b[0] - a[0]);
   const placed = [];
   for (const [, el] of items) {
@@ -2355,16 +2364,31 @@ async function openJob(token, db64, crewToken) {
   }).catch(() => { /* databasen har ikke pas-på endnu, eller ingen net */ });
   drawJob(true);
 }
+/* CLAUDE-2170: entreprenørens litranavne følger samme regler som feltpakkens: skjult langt ude, aldrig oven i hinanden
+   (opgavens litra vinder, ellers det største) og under opgavenålene. */
+let baseLabels = [], baseLabelPri = new Set();
+const litraKey = v => String(v ?? "").trim().split(/\s+/)[0].toLowerCase();   // «14s EG 1973» og «14s» er samme litra
+function updateBaseLabels() {
+  baseLabels = baseLabels.filter(l => map.hasLayer(l));
+  if (!baseLabels.length) return;
+  const show = map.getZoom() >= 14;
+  baseLabels.forEach(l => show ? l.openTooltip() : l.closeTooltip());
+  if (show) requestAnimationFrame(() => declutterLabels(baseLabels, l => baseLabelPri.has(litraKey(l.feature?.properties?.l)) ? Infinity : layerArea(l)));
+}
+map.on("zoomend", updateBaseLabels);
+map.on("moveend", () => baseLabels.length && map.getZoom() >= 14 && requestAnimationFrame(() => updateBaseLabels()));
 /* CLAUDE-1799: basalt skovkort til entreprenøren uden feltpakke: litraer (farve efter træart, litra-navn), veje,
-   kortlinjer, ejendomsgrænse, indgange og liggepladser. Kommer fra SkovPlan sammen med pas-på-lagene. */
-function drawBaseMap(group, kort) {
+   kortlinjer, ejendomsgrænse, indgange og liggepladser. Kommer fra SkovPlan sammen med pas-på-lagene.
+   pri: litranavne, der skal vinde over de andre (opgavernes litraer). */
+function drawBaseMap(group, kort, pri) {
   if (!kort) return;
+  baseLabels = []; baseLabelPri = new Set((pri || []).filter(Boolean).map(litraKey));
   const F = kort.farver;   // CLAUDE-1892: SkovPlans farver
   if (kort.skovafdelinger?.features?.length) L.geoJSON(kort.skovafdelinger, { interactive: false,
     style: f => { const sf = standFill(F, f.properties?.a);
       return sf ? { color: sf.k, opacity: Math.max(sf.ka, 0.35), weight: 1, fillColor: sf.f, fillOpacity: 0.45 }   // CLAUDE-2160
         : { color: "#2b3a2f", weight: 1, fillColor: colorFor(f.properties?.a), fillOpacity: 0.45 }; },
-    onEachFeature: (f, l) => { if (f.properties?.l) l.bindTooltip(esc(f.properties.l), { permanent: true, direction: "center", className: "litra-label" }); } }).addTo(group);
+    onEachFeature: (f, l) => { if (f.properties?.l) { l.bindTooltip(esc(f.properties.l), { permanent: true, direction: "center", className: "litra-label", pane: "litraLabels" }); baseLabels.push(l); } } }).addTo(group);
   for (const name of ["kortlinjer", "adgangsveje", "ejendomsgraense", "indgange", "aflaegningspladser"]) {
     if (!kort[name]?.features?.length) continue; const st = name === "ejendomsgraense" ? boundaryStyle(F, LAYERS[name].style) : LAYERS[name].style;
     if (F?.[name]?.typer) { addFarverLines(group, kort[name], F[name]); continue; }
@@ -2384,12 +2408,13 @@ function drawJobMap(fit) {
   const t = job.task;
   if (jobLayer) map.removeLayer(jobLayer);
   jobLayer = L.layerGroup().addTo(map);
-  drawBaseMap(jobLayer, state.jobKort);
+  drawBaseMap(jobLayer, state.jobKort, [t.stand?.label]);
   drawPasLayers(jobLayer, state.jobPas);
   if (t.omraade) L.geoJSON(t.omraade, { style: { color: "#e8710a", weight: 3, fillOpacity: 0.15 }, interactive: false }).addTo(jobLayer);
   if (t.punkt) L.marker(t.punkt, { icon: L.divIcon({ className: "", html: '<div class="task-pin mine">⚑</div>', iconSize: [26, 26], iconAnchor: [-6, 30] }) }).addTo(jobLayer);
   drawLiggepladser(jobLayer, [t]);
   if (fit) { try { const b = L.geoJSON(t.omraade || { type: "Point", coordinates: [t.punkt[1], t.punkt[0]] }).getBounds(); map.fitBounds(b, { padding: [30, 30], maxZoom: 17 }); } catch (e) { /* intet sted */ } }
+  updateBaseLabels();   // CLAUDE-2170
 }
 /* Hensyn ved opgaven: inden for 300 m af området eller punktet. */
 function jobPasNear(t) {
@@ -2677,7 +2702,7 @@ function drawCrew(fit) {
   crew.shown = true;
   if (crewLayer) map.removeLayer(crewLayer);
   crewLayer = L.layerGroup().addTo(map);
-  if (!state.data) drawBaseMap(crewLayer, crew.pkg.paspaa?.kort);
+  if (!state.data) drawBaseMap(crewLayer, crew.pkg.paspaa?.kort, (crew.pkg.opgaver || []).map(t => t.stand?.label));
   drawPasLayers(crewLayer, state.jobPas);
   const tasks = crewTasks(), open = tasks.filter(t => t.status !== "udført"), done = tasks.filter(t => t.status === "udført");
   const bounds = L.latLngBounds([]);
@@ -2689,6 +2714,7 @@ function drawCrew(fit) {
   });
   drawLiggepladser(crewLayer, open);
   if (fit && bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 });
+  updateBaseLabels();   // CLAUDE-2170
   const nr = t => tasks.indexOf(t) + 1;
   const line = t => { const late = t.due && t.due < todayIso() && t.status !== "udført", pn = jobPasNear(t).filter(h => h.def.pas.lvl > 1).length;
     return `<li data-crew="${esc(t.token)}"><div class="task-pin small ${t.status === "udført" ? "done" : "mine"}">${nr(t)}</div><div class="grow"><b>${esc(t.title || "Opgave")}</b> ${statusChip(t.status)}
