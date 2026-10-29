@@ -392,3 +392,10 @@ table.amt.in td:first-child input { width: 100%; text-align: left; }
 table.amt.in tr.len td { border-bottom: 1px solid #e3e8e4; padding-top: 0; }
 table.amt.in tr.len input { width: 100%; text-align: left; }
 table.amt.in tr:has(+ tr.len) td { border-bottom: none; }
+
+/* CLAUDE-3891: jagtanlæg og aflægningspladser som i SkovPlan */
+.jagt-ikon svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 1px 1.5px rgba(0,0,0,.45)); }
+.aflaeg-ikon { width: 10px; height: 10px; margin: 2px; background: #c65c10; border: 1.5px solid #fff; transform: rotate(45deg); box-shadow: 0 1px 2px rgba(0,0,0,.4); }
+.jagt-navn { display: none; background: rgba(255,255,255,.8); border: 0; box-shadow: none; padding: 0 4px; font-size: 10.5px; font-weight: 600; color: #4a2a0c; }
+.jagt-navn::before { display: none; }
+.vis-jagtnavne .jagt-navn { display: block; }
