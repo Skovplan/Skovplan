@@ -3022,34 +3022,34 @@ function refreshMenuInfo() {
    kode, melder sig på deres post, skriver beskeder og melder dyr. Hochsitze og skydestiger fra SkovPlans jagtanlæg kan
    blive poster. Jagtleder-linket (/j/KODE#leder=…) åbner jagten med ret til at sætte og flytte poster. */
 const JAGT_URL = "https://skovplan-jagt.skovplan.workers.dev";
-function huntPosts() {
+function huntTowers() {
   const fc = state.data?.extra?.lag?.jagt; if (!fc?.features) return [];
   return fc.features.filter(f => f.geometry?.type === "Point" && /^(hochsitz|skydestige)$/i.test(f.properties?.type || "") && !/planlagt/i.test(f.properties?.status || ""))
-    .map(f => { const p = f.properties; return { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], note: p.navn && p.navn !== p.type ? p.navn : p.type }; })
+    .map(f => ({ type: /^skyd/i.test(f.properties.type) ? "Skydestige" : "Hochsitz", navn: f.properties.navn || "", lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] }))
     .sort((a, b) => b.lat - a.lat || a.lng - b.lng);
 }
+const huntPosts = () => huntTowers().map(t => ({ lat: t.lat, lng: t.lng, note: t.navn && t.navn !== t.type ? t.navn : t.type }));
 function huntSheet() {
   if (!state.data) return toast("Åbn først et skovkort");
   const posts = huntPosts(), last = (() => { try { return JSON.parse(safeLS("jagt:" + state.data.id) || "null"); } catch (e) { return null; } })();
   openSheet(`<div class="head"><h3>Opret jagt</h3><button class="close">Luk</button></div>
-    <p>Jagten får skovkortet for <b>${esc(state.data.name || "skoven")}</b>. Jægerne kommer ind med et link eller en kode på 5 tegn,
+    <p>Jagten får grænsen og tårnene for <b>${esc(state.data.name || "skoven")}</b> over luftfoto. Jægerne kommer ind med et link eller en kode på 5 tegn,
       melder sig på deres post, skriver beskeder og melder dyr på kortet.</p>
     <label for="hNavn">Jagtens navn</label><input id="hNavn" maxlength="60" value="${esc("Jagt " + new Date().toLocaleDateString("da-DK", { day: "numeric", month: "long" }))}">
-    <label for="hRadius">Afstandscirkel om posterne (meter)</label><input id="hRadius" type="number" inputmode="numeric" min="5" max="500" step="5" value="30">
     ${posts.length ? `<label style="display:flex;gap:10px;align-items:center;font-size:15px;color:inherit;margin:12px 0"><input type="checkbox" id="hPoster" checked style="width:auto;min-height:0">
-      Hochsitze og skydestiger bliver poster (${posts.length})</label>` : '<p class="muted">Posterne sætter du i jagten (☰ › «Sæt og flyt poster»).</p>'}
+      Hochsitze og skydestiger bliver også poster (${posts.length})</label>` : '<p class="muted">Posterne sætter du i jagten (☰ › «Sæt og flyt poster»).</p>'}
     <button class="primary big" data-act="huntCreate">Opret jagten</button>
     ${last ? `<p class="muted" style="margin-top:14px">Sidste jagt: ${esc(last.navn)} (kode ${esc(last.kode)})</p>
       <button class="big" data-act="huntOpen" data-url="${esc(last.leder)}">Åbn sidste jagt</button>` : ""}`);
 }
 async function huntCreate(btn) {
-  const name = $("#hNavn").value.trim() || "Jagt", radius = Math.max(5, Math.min(500, Math.round(+$("#hRadius").value || 30)));
+  const name = $("#hNavn").value.trim() || "Jagt", radius = 30;
   const posts = $("#hPoster")?.checked ? huntPosts() : [];
   const L_ = state.data.layers, bare = fc => fc && { type: "FeatureCollection", features: fc.features.map(f => ({ type: "Feature", geometry: f.geometry, properties: {} })) };
-  const kort = { skovafdelinger: { type: "FeatureCollection", features: L_.skovafdelinger.features.map(f => ({ type: "Feature", geometry: f.geometry,
-    properties: f.properties["træart"] ? { "træart": f.properties["træart"] } : {} })) }, navn: state.data.name || "" };
-  if (L_.ejendomsgraense) kort.ejendomsgraense = bare(L_.ejendomsgraense);
-  if (L_.adgangsveje) kort.adgangsveje = bare(L_.adgangsveje);
+  // CLAUDE-3880: kun ejendommens ydre grænse og tårnene – ingen farver på skoven (litraerne kun, hvis grænsen mangler)
+  const kort = { navn: state.data.name || "", taarne: { type: "FeatureCollection", features: huntTowers().map(t => ({ type: "Feature",
+    geometry: { type: "Point", coordinates: [t.lng, t.lat] }, properties: { type: t.type, navn: t.navn } })) } };
+  if (L_.ejendomsgraense?.features?.length) kort.ejendomsgraense = bare(L_.ejendomsgraense); else kort.skovafdelinger = bare(L_.skovafdelinger);
   const call = async (p, method, body, leder) => {
     const r = await fetch(JAGT_URL + p, { method, headers: { "content-type": "application/json", ...(leder ? { "x-leder": leder } : {}) }, body: body && JSON.stringify(body) });
     const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.fejl || "HTTP " + r.status); return d;
