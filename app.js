@@ -415,7 +415,31 @@ const BASEMAPS = [
   { name: "Ortofoto (gemt)", layer: null, ortho: true },
   { name: "OpenStreetMap", layer: L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 20, maxNativeZoom: 19, attribution: "© OpenStreetMap" }) },
   { name: "Ingen baggrund", layer: null },
+  { name: "Luftfoto (online)", layer: null, online: true },   // CLAUDE-3891
 ];
+/* CLAUDE-3891: Dataforsyningens nyeste forårsfoto (2026, 12,5 cm) online via SkovPlan Jagts server, samme foto som
+   jagtappen. Serveren vælger et lag, der dækker ejendommen; ellers Esris luftfoto. Sete fliser gemmes af service workeren. */
+const ORTO_SERVER = "https://skovplan-jagt.skovplan.workers.dev";
+const ESRI_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+const ONLINE = BASEMAPS.length - 1;
+let onlineOrthoReq = null;
+function onlineOrtho() {
+  if (onlineOrthoReq) return onlineOrthoReq;
+  let c = map.getCenter();
+  try { if (state.data) c = L.geoJSON(state.data.layers.skovafdelinger).getBounds().getCenter(); } catch (e) { /* kortets midte */ }
+  onlineOrthoReq = fetch(`${ORTO_SERVER}/orto/info?lat=${c.lat.toFixed(4)}&lng=${c.lng.toFixed(4)}`).then(r => r.json()).catch(() => ({ kilde: "esri" })).then(i => {
+    const b = BASEMAPS[ONLINE], sdfi = i.kilde === "sdfi" && i.sti;
+    b.name = sdfi ? `Luftfoto ${i.aar || "nyeste"} (online)` : "Luftfoto (online, Esri)";
+    b.layer = L.tileLayer(sdfi ? ORTO_SERVER + i.sti + "/{z}/{x}/{y}.jpg" : ESRI_URL,
+      { maxZoom: 21, maxNativeZoom: sdfi ? 20 : 19, attribution: sdfi ? `Ortofoto © SDFI${i.aar ? " (forår " + i.aar + ")" : ""}` : "Luftfoto © Esri" });
+    if (sdfi) b.layer.on("tileerror", e => { const t = e.tile, k = e.coords; if (t.dataset.esri || k.z > 19) return;
+      t.dataset.esri = "1"; t.src = ESRI_URL.replace("{z}", k.z).replace("{y}", k.y).replace("{x}", k.x); });
+    if (!sdfi) onlineOrthoReq = null;   // prøv SDFI igen næste gang
+    if (state.basemap === ONLINE) { b.layer.addTo(map).bringToBack(); restyle(); }
+    return b;
+  });
+  return onlineOrthoReq;
+}
 function makeOrtho() {
   const m = state.ortho; if (!m) return null;
   return new OrthoLayer({ prefix: m.prefix || "", minZoom: 0, maxZoom: 21, minNativeZoom: m.minzoom, maxNativeZoom: m.maxzoom, attribution: m.attribution || "Ortofoto",
@@ -423,7 +447,8 @@ function makeOrtho() {
 }
 function setBasemap(i) {
   BASEMAPS.forEach(b => b.layer && map.removeLayer(b.layer));
-  if (BASEMAPS[i].ortho && !state.ortho) i = 1;
+  if (BASEMAPS[i].ortho && !state.ortho) i = navigator.onLine ? ONLINE : 1;   // CLAUDE-3891: intet gemt ortofoto: luftfotoet online
+  if (BASEMAPS[i].online && !BASEMAPS[i].layer) onlineOrtho();
   if (BASEMAPS[0].layer && BASEMAPS[0].layer._skovMeta !== state.ortho) BASEMAPS[0].layer = null;
   if (BASEMAPS[i].ortho && !BASEMAPS[0].layer) { BASEMAPS[0].layer = makeOrtho(); BASEMAPS[0].layer._skovMeta = state.ortho; }
   state.basemap = i; const b = BASEMAPS[i]; if (b.layer) b.layer.addTo(map).bringToBack();
