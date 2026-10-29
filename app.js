@@ -16,9 +16,25 @@ const LAYERS = {
   ejendomsgraense: { style: { color: "#b3261e", weight: 2.5, fill: false, dashArray: "6 4" } },
   adgangsveje: { style: { color: "#7a5230", weight: 3 } },
   kortlinjer: { style: { color: "#555", weight: 1.5, dashArray: "3 3" } },
-  indgange: { style: { color: "#7a5230", radius: 5 } },
-  aflaegningspladser: { style: { color: "#5b3a17", fillColor: "#f2c14e", fillOpacity: 1, weight: 2, radius: 7 } },
+  indgange: { style: { color: "#fff", weight: 1.5, fillColor: "#009650", fillOpacity: 1, radius: 4 } },   // CLAUDE-3891: som i SkovPlan (grøn prik)
+  aflaegningspladser: { style: { color: "#fff", fillColor: "#c65c10", fillOpacity: 1, weight: 1.5, radius: 5 } },
 };
+/* CLAUDE-3891: jagtanlæg og aflægningspladser med samme tegn som i SkovPlan (icons/jagt/*.svg, farver fra jagtanlaeg.TYPES) */
+const JAGT_SVG = {"foderplads": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><circle cx=\"16\" cy=\"16\" r=\"15\" fill=\"#a8861c\" stroke=\"#fff\" stroke-width=\"1.6\"/><polygon points=\"7.5,12 16,6.5 24.5,12\" fill=\"#fff\" stroke=\"none\"/><g stroke=\"#fff\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" fill=\"none\"><line x1=\"10\" y1=\"12\" x2=\"10\" y2=\"26\"/><line x1=\"22\" y1=\"12\" x2=\"22\" y2=\"26\"/><polyline points=\"10,14 16,21 22,14\"/><line x1=\"13\" y1=\"14.5\" x2=\"13\" y2=\"17.5\" stroke-width=\"1.4\"/><line x1=\"16\" y1=\"14.5\" x2=\"16\" y2=\"20\" stroke-width=\"1.4\"/><line x1=\"19\" y1=\"14.5\" x2=\"19\" y2=\"17.5\" stroke-width=\"1.4\"/><line x1=\"10\" y1=\"24\" x2=\"22\" y2=\"24\"/></g></svg>", "hochsitz": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><circle cx=\"16\" cy=\"16\" r=\"15\" fill=\"#7a3e12\" stroke=\"#fff\" stroke-width=\"1.6\"/><polygon points=\"8,11 16,5.5 24,11\" fill=\"#fff\" stroke=\"none\"/><rect x=\"10\" y=\"11\" width=\"12\" height=\"6\" rx=\"0.8\" fill=\"#fff\" stroke=\"none\"/><g stroke=\"#fff\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" fill=\"none\"><line x1=\"11\" y1=\"17\" x2=\"9\" y2=\"26.5\"/><line x1=\"21\" y1=\"17\" x2=\"23\" y2=\"26.5\"/><line x1=\"18.2\" y1=\"17.0\" x2=\"18.2\" y2=\"26.5\"/><line x1=\"13.8\" y1=\"17.0\" x2=\"13.8\" y2=\"26.5\"/><line x1=\"18.2\" y1=\"19.4\" x2=\"13.8\" y2=\"19.4\" stroke-width=\"1.5\"/><line x1=\"18.2\" y1=\"21.8\" x2=\"13.8\" y2=\"21.8\" stroke-width=\"1.5\"/><line x1=\"18.2\" y1=\"24.1\" x2=\"13.8\" y2=\"24.1\" stroke-width=\"1.5\"/></g></svg>", "kirreplads": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><circle cx=\"16\" cy=\"16\" r=\"15\" fill=\"#8f7a1e\" stroke=\"#fff\" stroke-width=\"1.6\"/><g stroke=\"#fff\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" fill=\"none\"><path d=\"M11,9 h10 l-1.2,14 h-7.6 z\"/><line x1=\"11.4\" y1=\"13.5\" x2=\"20.6\" y2=\"13.5\" stroke-width=\"1.5\"/><line x1=\"11.9\" y1=\"18.5\" x2=\"20.1\" y2=\"18.5\" stroke-width=\"1.5\"/></g><circle cx=\"9\" cy=\"26\" r=\"1.2\" fill=\"#fff\" stroke=\"none\"/><circle cx=\"13\" cy=\"26.5\" r=\"1.2\" fill=\"#fff\" stroke=\"none\"/><circle cx=\"19\" cy=\"26.5\" r=\"1.2\" fill=\"#fff\" stroke=\"none\"/><circle cx=\"23\" cy=\"26\" r=\"1.2\" fill=\"#fff\" stroke=\"none\"/></svg>", "lysning": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><circle cx=\"16\" cy=\"16\" r=\"15\" fill=\"#c79a1e\" stroke=\"#fff\" stroke-width=\"1.6\"/><circle cx=\"16\" cy=\"13\" r=\"4\" fill=\"#fff\" stroke=\"none\"/><g stroke=\"#fff\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" fill=\"none\"><line x1=\"22.0\" y1=\"13.0\" x2=\"24.3\" y2=\"13.0\" stroke-width=\"1.6\"/><line x1=\"10.0\" y1=\"13.0\" x2=\"7.7\" y2=\"13.0\" stroke-width=\"1.6\"/><line x1=\"16.0\" y1=\"7.0\" x2=\"16.0\" y2=\"4.7\" stroke-width=\"1.6\"/><line x1=\"20.2\" y1=\"8.8\" x2=\"21.9\" y2=\"7.1\" stroke-width=\"1.6\"/><line x1=\"11.8\" y1=\"8.8\" x2=\"10.1\" y2=\"7.1\" stroke-width=\"1.6\"/><line x1=\"20.2\" y1=\"17.2\" x2=\"21.9\" y2=\"18.9\" stroke-width=\"1.6\"/><line x1=\"11.8\" y1=\"17.2\" x2=\"10.1\" y2=\"18.9\" stroke-width=\"1.6\"/><path d=\"M6,26 q3,-4 5,0 q2,-4 5,0 q3,-4 5,0 q2,-4 5,0\"/></g></svg>", "puerschsti": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><circle cx=\"16\" cy=\"16\" r=\"15\" fill=\"#8a5a14\" stroke=\"#fff\" stroke-width=\"1.6\"/><path d=\"M13.2,6.5 C10,11 8.8,17 10.4,21.2 C11.4,23.6 14.6,23.4 14.9,20.6 L15.2,11 C15.2,8.6 14.4,6.8 13.2,6.5 Z\" fill=\"#fff\" stroke=\"none\"/><path d=\"M18.8,6.5 C22,11 23.2,17 21.6,21.2 C20.6,23.6 17.4,23.4 17.1,20.6 L16.8,11 C16.8,8.6 17.6,6.8 18.8,6.5 Z\" fill=\"#fff\" stroke=\"none\"/><circle cx=\"11\" cy=\"26\" r=\"1.3\" fill=\"#fff\" stroke=\"none\"/><circle cx=\"21\" cy=\"26\" r=\"1.3\" fill=\"#fff\" stroke=\"none\"/></svg>", "remise": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><circle cx=\"16\" cy=\"16\" r=\"15\" fill=\"#3f7a30\" stroke=\"#fff\" stroke-width=\"1.6\"/><circle cx=\"11\" cy=\"15\" r=\"5\" fill=\"#fff\" stroke=\"none\"/><circle cx=\"21\" cy=\"15\" r=\"5\" fill=\"#fff\" stroke=\"none\"/><circle cx=\"16\" cy=\"10.5\" r=\"5.5\" fill=\"#fff\" stroke=\"none\"/><g stroke=\"#fff\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" fill=\"none\"><line x1=\"11\" y1=\"19\" x2=\"11\" y2=\"26\"/><line x1=\"21\" y1=\"19\" x2=\"21\" y2=\"26\"/><line x1=\"16\" y1=\"15\" x2=\"16\" y2=\"26\"/><line x1=\"7\" y1=\"26.5\" x2=\"25\" y2=\"26.5\"/></g></svg>", "saltsten": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><circle cx=\"16\" cy=\"16\" r=\"15\" fill=\"#6f7b82\" stroke=\"#fff\" stroke-width=\"1.6\"/><rect x=\"10\" y=\"7\" width=\"12\" height=\"7\" rx=\"1.2\" fill=\"#fff\" stroke=\"none\"/><g stroke=\"#fff\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" fill=\"none\"><line x1=\"16\" y1=\"14\" x2=\"16\" y2=\"26.5\" stroke-width=\"2.6\"/><line x1=\"12\" y1=\"26.5\" x2=\"20\" y2=\"26.5\"/></g></svg>", "skudlinje": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><circle cx=\"16\" cy=\"16\" r=\"15\" fill=\"#c2410c\" stroke=\"#fff\" stroke-width=\"1.6\"/><g stroke=\"#fff\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" fill=\"none\"><circle cx=\"16\" cy=\"16\" r=\"7\"/><line x1=\"16\" y1=\"5.5\" x2=\"16\" y2=\"12\"/><line x1=\"16\" y1=\"20\" x2=\"16\" y2=\"26.5\"/><line x1=\"5.5\" y1=\"16\" x2=\"12\" y2=\"16\"/><line x1=\"20\" y1=\"16\" x2=\"26.5\" y2=\"16\"/></g><circle cx=\"16\" cy=\"16\" r=\"1.4\" fill=\"#fff\" stroke=\"none\"/></svg>", "skydestige": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><circle cx=\"16\" cy=\"16\" r=\"15\" fill=\"#b0631c\" stroke=\"#fff\" stroke-width=\"1.6\"/><g stroke=\"#fff\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" fill=\"none\"><line x1=\"8.7\" y1=\"25.5\" x2=\"16.2\" y2=\"7.5\"/><line x1=\"13.3\" y1=\"27.5\" x2=\"20.8\" y2=\"9.5\"/><line x1=\"10.2\" y1=\"21.9\" x2=\"14.8\" y2=\"23.9\" stroke-width=\"1.5\"/><line x1=\"11.7\" y1=\"18.3\" x2=\"16.3\" y2=\"20.3\" stroke-width=\"1.5\"/><line x1=\"13.2\" y1=\"14.7\" x2=\"17.8\" y2=\"16.7\" stroke-width=\"1.5\"/><line x1=\"14.7\" y1=\"11.1\" x2=\"19.3\" y2=\"13.1\" stroke-width=\"1.5\"/><line x1=\"14\" y1=\"9\" x2=\"24\" y2=\"9\" stroke-width=\"2.6\"/><line x1=\"22.5\" y1=\"9\" x2=\"24\" y2=\"26.5\" stroke-width=\"1.6\"/></g></svg>", "vildtager": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><circle cx=\"16\" cy=\"16\" r=\"15\" fill=\"#8a9a1e\" stroke=\"#fff\" stroke-width=\"1.6\"/><g stroke=\"#fff\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" fill=\"none\"><line x1=\"16\" y1=\"27\" x2=\"16\" y2=\"7\"/></g><ellipse cx=\"13.3\" cy=\"10\" rx=\"2\" ry=\"3.4\" transform=\"rotate(-30 13.3 10)\" fill=\"#fff\" stroke=\"none\"/><ellipse cx=\"18.7\" cy=\"10\" rx=\"2\" ry=\"3.4\" transform=\"rotate(30 18.7 10)\" fill=\"#fff\" stroke=\"none\"/><ellipse cx=\"13.3\" cy=\"15\" rx=\"2\" ry=\"3.4\" transform=\"rotate(-30 13.3 15)\" fill=\"#fff\" stroke=\"none\"/><ellipse cx=\"18.7\" cy=\"15\" rx=\"2\" ry=\"3.4\" transform=\"rotate(30 18.7 15)\" fill=\"#fff\" stroke=\"none\"/><ellipse cx=\"13.3\" cy=\"20\" rx=\"2\" ry=\"3.4\" transform=\"rotate(-30 13.3 20)\" fill=\"#fff\" stroke=\"none\"/><ellipse cx=\"18.7\" cy=\"20\" rx=\"2\" ry=\"3.4\" transform=\"rotate(30 18.7 20)\" fill=\"#fff\" stroke=\"none\"/><ellipse cx=\"16\" cy=\"6.5\" rx=\"1.7\" ry=\"2.8\" fill=\"#fff\" stroke=\"none\"/></svg>"};
+const JAGT_TYPER = { Hochsitz: ["hochsitz", "#7a3e12"], Skydestige: ["skydestige", "#b0631c"], Foderplads: ["foderplads", "#c9a227"],
+  Kirreplads: ["kirreplads", "#8f7a1e"], Saltsten: ["saltsten", "#9aa3a8"], Skudlinje: ["skudlinje", "#c2410c", 6], "Pürschsti": ["puerschsti", "#8a5a14", 1.5],
+  Vildtager: ["vildtager", "#c8d24a"], "Vildtagerforløb": ["vildtager", "#a4b52c", 15], Remise: ["remise", "#4f8a3c"], Lysning: ["lysning", "#e5d58a"] };
+const jagtType = p => JAGT_TYPER[p?.type] || JAGT_TYPER.Hochsitz;
+const jagtIkon = (p, px = 18) => L.divIcon({ className: "jagt-ikon", iconSize: [px, px], iconAnchor: [px / 2, px / 2], popupAnchor: [0, -px / 2], html: JAGT_SVG[jagtType(p)[0]] || JAGT_SVG.hochsitz });
+function jagtStil(f) {   // linjer i typens farve og bredde, flader halvgennemsigtige med kant
+  const [, farve, bredde] = jagtType(f.properties);
+  return /Polygon/.test(f.geometry?.type || "") ? { color: farve, weight: 1.5, fillColor: farve, fillOpacity: 0.35 }
+    : { color: farve, weight: bredde ? Math.max(2, Math.min(8, bredde * 0.8)) : 2.5, opacity: 0.85, lineCap: "round" };
+}
+const aflaegIkon = () => L.divIcon({ className: "", iconSize: [14, 14], iconAnchor: [7, 7], html: '<div class="aflaeg-ikon"></div>' });   // brun rombe som i SkovPlan
+function pasPunkt(key, def) {   // punkter i pas-på-lagene: jagtanlæg som SkovPlans ikoner, resten som prikker
+  return (f, ll) => key === "jagt" ? L.marker(ll, { icon: jagtIkon(f.properties), keyboard: false }) : L.circleMarker(ll, def.style);
+}
 /* Lokale hensyn fra feltpakken (feltlag.json): navn i menuen «Vis lag», stil og evt. tekst ved klik.
    CLAUDE-1795: «pas» gør laget til et pas-på-lag: appen advarer, når GPS-positionen kommer inden for r meter
    (r = 0: kun inde i området). lvl 2 = rød (må ikke røres uden dispensation), 1 = gul (kontrollér). Typerne er de samme
@@ -510,10 +526,11 @@ function drawData() {
   for (const [key, def] of Object.entries(EXTRA)) {
     if (!extra[key] || hidden.has(key)) continue;
     const lyr = L.geoJSON(extra[key], {   // CLAUDE-1795: flader tager ikke klik fra litraerne
-      style: f => ({ ...def.style, interactive: !!def.info && !/Polygon/.test(f.geometry?.type || "") }),
-      pointToLayer: (f, ll) => L.circleMarker(ll, def.style),
+      style: f => ({ ...(key === "jagt" ? jagtStil(f) : def.style), interactive: !!def.info && !/Polygon/.test(f.geometry?.type || "") }),
+      pointToLayer: pasPunkt(key, def),
       onEachFeature: (f, l) => {
         if (def.info) l.bindPopup(esc(def.info(f.properties)));
+        if (key === "jagt" && f.properties?.navn && /Point/.test(f.geometry?.type || "")) l.bindTooltip(esc(f.properties.navn), { permanent: true, direction: "right", offset: [8, 0], className: "jagt-navn", interactive: false });   // CLAUDE-3891: navnet, når man er tæt på
         if (def.label) state.extraLabels.push(L.tooltip({ permanent: true, direction: "center", className: "natur-label", interactive: false })
           .setLatLng(l.getBounds().getCenter()).setContent(esc(def.label(f.properties))));
       },
@@ -522,7 +539,7 @@ function drawData() {
   }
   if (L_.aflaegningspladser && !hidden.has("aflaegningspladser")) {
     const st = LAYERS.aflaegningspladser.style;
-    const lyr = L.geoJSON(L_.aflaegningspladser, { pointToLayer: (f, ll) => L.circleMarker(ll, st),
+    const lyr = L.geoJSON(L_.aflaegningspladser, { pointToLayer: (f, ll) => L.marker(ll, { icon: aflaegIkon(), keyboard: false }),   // CLAUDE-3891
       onEachFeature: (f, l) => l.bindPopup(esc(["Aflægningsplads", f.properties.navn, f.properties.sortiment, f.properties["bemærkning"]].filter(Boolean).join(" · "))) }).addTo(map);
     state.overlays.push(lyr);
   }
@@ -594,6 +611,8 @@ function layerMenu() {
   });
 }
 map.on("zoomend", updateLabels);
+const visJagtNavne = () => map.getContainer().classList.toggle("vis-jagtnavne", map.getZoom() >= 16);   // CLAUDE-3891
+map.on("zoomend", visJagtNavne);
 function countByStand() { const c = {}; state.regs.forEach(r => { if (r.stand) c[r.stand.key] = (c[r.stand.key] || 0) + 1; }); return c; }
 
 /* ------------------------------------------------------------------ GPS */
@@ -2392,7 +2411,7 @@ function drawBaseMap(group, kort, pri) {
   for (const name of ["kortlinjer", "adgangsveje", "ejendomsgraense", "indgange", "aflaegningspladser"]) {
     if (!kort[name]?.features?.length) continue; const st = name === "ejendomsgraense" ? boundaryStyle(F, LAYERS[name].style) : LAYERS[name].style;
     if (F?.[name]?.typer) { addFarverLines(group, kort[name], F[name]); continue; }
-    L.geoJSON(kort[name], { style: () => st, pointToLayer: (f, ll) => L.circleMarker(ll, st), interactive: name === "aflaegningspladser",
+    L.geoJSON(kort[name], { style: () => st, pointToLayer: (f, ll) => name === "aflaegningspladser" ? L.marker(ll, { icon: aflaegIkon(), keyboard: false }) : L.circleMarker(ll, st), interactive: name === "aflaegningspladser",
       onEachFeature: (f, l) => { if (name === "aflaegningspladser" && f.properties?.navn) l.bindTooltip(esc(f.properties.navn)); } }).addTo(group);
   }
 }
@@ -2400,7 +2419,7 @@ function drawBaseMap(group, kort, pri) {
 function drawPasLayers(group, lag) {
   for (const [key, def] of Object.entries(EXTRA)) {
     if (!def.pas || !lag?.[key]?.features?.length) continue;
-    L.geoJSON(lag[key], { style: f => ({ ...def.style, interactive: !/Polygon/.test(f.geometry?.type || "") }), pointToLayer: (f, ll) => L.circleMarker(ll, def.style),
+    L.geoJSON(lag[key], { style: f => ({ ...(key === "jagt" ? jagtStil(f) : def.style), interactive: !/Polygon/.test(f.geometry?.type || "") }), pointToLayer: pasPunkt(key, def),
       onEachFeature: (f, l) => l.bindPopup(`<b>Pas på: ${esc(pasText(def.pas.what, f.properties))}</b><br>${esc(pasText(def.pas.why, f.properties))}`) }).addTo(group);
   }
 }
@@ -3030,7 +3049,14 @@ function huntTowers() {
     .map(f => ({ type: /^skyd/i.test(f.properties.type) ? "Skydestige" : "Hochsitz", navn: f.properties.navn || "", lat: pkt(f.geometry)[1], lng: pkt(f.geometry)[0] }))
     .sort((a, b) => b.lat - a.lat || a.lng - b.lng);
 }
-const huntPosts = () => huntTowers().map(t => ({ lat: t.lat, lng: t.lng, note: t.navn && t.navn !== t.type ? t.navn : t.type }));
+// CLAUDE-3891: posten får tårnets nummer fra SkovPlan («Hochsitz 51» -> post 51); tårne uden nummer får de næste ledige
+const taarnNr = navn => { const m = String(navn || "").match(/\d+/g); return m && m.length === 1 ? m[0] : null; };
+function huntPosts() {
+  const t = huntTowers(), brugt = new Set(t.map(x => taarnNr(x.navn)).filter(Boolean)), givet = new Set(); let fri = 0;
+  return t.map(x => { let nr = taarnNr(x.navn);
+    if (!nr || givet.has(nr)) { do fri++; while (brugt.has(String(fri))); nr = String(fri); brugt.add(nr); }
+    givet.add(nr); return { lat: x.lat, lng: x.lng, nr, note: x.navn && x.navn !== x.type ? x.navn : x.type }; });
+}
 function huntSheet() {
   if (!state.data) return toast("Åbn først et skovkort");
   const posts = huntPosts(), last = (() => { try { return JSON.parse(safeLS("jagt:" + state.data.id) || "null"); } catch (e) { return null; } })();
@@ -3071,7 +3097,7 @@ async function huntCreate(btn) {
     for (const [i, p] of posts.entries()) {
       toast(`Sætter post ${i + 1} af ${posts.length} …`, 30000);
       const s = await call(api, "POST", { type: "post", lat: p.lat, lng: p.lng }, leder);
-      await call(api, "POST", { type: "post", id: s.poster[s.poster.length - 1].id, nr: String(i + 1), note: p.note }, leder);
+      await call(api, "POST", { type: "post", id: s.poster[s.poster.length - 1].id, nr: p.nr || String(i + 1), note: p.note }, leder);
     }
     const jaeger = `${JAGT_URL}/j/${kode}`, lederLink = `${jaeger}#leder=${leder}`;
     safeLS("jagt:" + state.data.id, JSON.stringify({ kode, navn: name, leder: lederLink, t: Date.now() }));
