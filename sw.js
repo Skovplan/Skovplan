@@ -1,5 +1,5 @@
 /* SkovPlan Felt – service worker: appen virker uden net, og kortfliser gemmes, når de er set. */
-const APP = "skovplan-felt-v44";   // CLAUDE-3891
+const APP = "skovplan-felt-v45";   // CLAUDE-3891
 const TILES = "skovplan-felt-tiles";
 const SHELL = ["./", "index.html", "app.js", "style.css", "manifest.webmanifest", "favicon.png", "apple-touch-icon.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png",
   "logo.png", "logo-symbol.png",
@@ -15,7 +15,8 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET") return;
-  if (url.hostname.endsWith("tile.openstreetmap.org")) {
+  if (url.hostname.endsWith("tile.openstreetmap.org") || url.hostname === "server.arcgisonline.com"
+    || (url.hostname === "skovplan-jagt.skovplan.workers.dev" && /^\/orto\/\d~/.test(url.pathname))) {   // CLAUDE-3891: luftfoto online
     e.respondWith(caches.open(TILES).then(async c => {
       const hit = await c.match(e.request);
       if (hit) return hit;
