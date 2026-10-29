@@ -3540,7 +3540,10 @@ async function updateMap(d, base, version) {
   if (!res.ok) throw new Error("HTTP " + res.status);
   const zip = await JSZip.loadAsync(await res.blob());
   const meta = JSON.parse(await zip.file("feltpakke.json").async("string"));
+  // CLAUDE-3891: skovkort.zip kan være ældre end den feltpakke, telefonen har – så beholdes telefonens kort
+  if (meta.kort_version && meta.kort_version < (d.pakke.kort_version || "")) return;
   const fl = zip.file("feltlag.json"), extra = fl ? JSON.parse(await fl.async("string")) : d.extra;
+  if (extra && !extra.veje && d.extra?.veje) extra.veje = d.extra.veje;   // vejene til jagtens chaufførruter
   const file = new File([await zip.file("skovdriftsplan.gpkg").async("blob")], "skovdriftsplan.gpkg");
   const g = await openSqlite(file);
   let data; try { data = readGpkg(g, file); } finally { g.close(); }
