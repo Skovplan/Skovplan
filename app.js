@@ -3024,8 +3024,10 @@ function refreshMenuInfo() {
 const JAGT_URL = "https://skovplan-jagt.skovplan.workers.dev";
 function huntTowers() {
   const fc = state.data?.extra?.lag?.jagt; if (!fc?.features) return [];
-  return fc.features.filter(f => f.geometry?.type === "Point" && /^(hochsitz|skydestige)$/i.test(f.properties?.type || "") && !/planlagt/i.test(f.properties?.status || ""))
-    .map(f => ({ type: /^skyd/i.test(f.properties.type) ? "Skydestige" : "Hochsitz", navn: f.properties.navn || "", lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] }))
+  // CLAUDE-3891: feltpakken har tårnene som MultiPoint med ét punkt – dem tager vi også med
+  const pkt = g => g?.type === "Point" ? g.coordinates : g?.type === "MultiPoint" && g.coordinates?.length ? g.coordinates[0] : null;
+  return fc.features.filter(f => pkt(f.geometry) && /^(hochsitz|skydestige)$/i.test(f.properties?.type || "") && !/planlagt/i.test(f.properties?.status || ""))
+    .map(f => ({ type: /^skyd/i.test(f.properties.type) ? "Skydestige" : "Hochsitz", navn: f.properties.navn || "", lat: pkt(f.geometry)[1], lng: pkt(f.geometry)[0] }))
     .sort((a, b) => b.lat - a.lat || a.lng - b.lng);
 }
 const huntPosts = () => huntTowers().map(t => ({ lat: t.lat, lng: t.lng, note: t.navn && t.navn !== t.type ? t.navn : t.type }));
