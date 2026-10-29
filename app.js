@@ -3053,6 +3053,8 @@ async function huntCreate(btn) {
     geometry: { type: "Point", coordinates: [t.lng, t.lat] }, properties: { type: t.type, navn: t.navn } })) } };
   if (L_.ejendomsgraense?.features?.length) kort.ejendomsgraense = bare(L_.ejendomsgraense); else kort.skovafdelinger = bare(L_.skovafdelinger);
   if (state.data.extra?.veje?.features?.length) kort.veje = state.data.extra.veje;   // CLAUDE-3891: skovvejene til chaufførruter
+  if (L_.indgange?.features?.length) kort.indgange = { type: "FeatureCollection", features: L_.indgange.features.map(f => ({ type: "Feature", geometry: f.geometry,
+    properties: { navn: f.properties?.navn || "", type: f.properties?.type || "" } })) };   // CLAUDE-3891: «Husindgangen» er huset, ruterne starter fra
   const call = async (p, method, body, leder) => {
     const r = await fetch(JAGT_URL + p, { method, headers: { "content-type": "application/json", ...(leder ? { "x-leder": leder } : {}) }, body: body && JSON.stringify(body) });
     const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.fejl || "HTTP " + r.status); return d;
