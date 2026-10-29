@@ -3017,6 +3017,75 @@ function refreshMenuInfo() {
   $("#btnUpdatePkg")?.classList.toggle("hidden", !onlinePackageUrl());
   propertyList().then(l => $("#btnChoose")?.classList.toggle("hidden", !(l.length > 1 || safeLS("kundeUrl"))));
 }
+/* ------------------------------------------------------------------ CLAUDE-3870: «Opret jagt»
+   Skovkortet på telefonen bliver til en jagt i SkovPlan Jagt (som «Entreprenørpakke…»): jægerne kommer ind med link eller
+   kode, melder sig på deres post, skriver beskeder og melder dyr. Hochsitze og skydestiger fra SkovPlans jagtanlæg kan
+   blive poster. Jagtleder-linket (/j/KODE#leder=…) åbner jagten med ret til at sætte og flytte poster. */
+const JAGT_URL = "https://skovplan-jagt.skovplan.workers.dev";
+function huntPosts() {
+  const fc = state.data?.extra?.lag?.jagt; if (!fc?.features) return [];
+  return fc.features.filter(f => f.geometry?.type === "Point" && /^(hochsitz|skydestige)$/i.test(f.properties?.type || "") && !/planlagt/i.test(f.properties?.status || ""))
+    .map(f => { const p = f.properties; return { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], note: p.navn && p.navn !== p.type ? p.navn : p.type }; })
+    .sort((a, b) => b.lat - a.lat || a.lng - b.lng);
+}
+function huntSheet() {
+  if (!state.data) return toast("Åbn først et skovkort");
+  const posts = huntPosts(), last = (() => { try { return JSON.parse(safeLS("jagt:" + state.data.id) || "null"); } catch (e) { return null; } })();
+  openSheet(`<div class="head"><h3>Opret jagt</h3><button class="close">Luk</button></div>
+    <p>Jagten får skovkortet for <b>${esc(state.data.name || "skoven")}</b>. Jægerne kommer ind med et link eller en kode på 5 tegn,
+      melder sig på deres post, skriver beskeder og melder dyr på kortet.</p>
+    <label for="hNavn">Jagtens navn</label><input id="hNavn" maxlength="60" value="${esc("Jagt " + new Date().toLocaleDateString("da-DK", { day: "numeric", month: "long" }))}">
+    <label for="hRadius">Afstandscirkel om posterne (meter)</label><input id="hRadius" type="number" inputmode="numeric" min="5" max="500" step="5" value="30">
+    ${posts.length ? `<label style="display:flex;gap:10px;align-items:center;font-size:15px;color:inherit;margin:12px 0"><input type="checkbox" id="hPoster" checked style="width:auto;min-height:0">
+      Hochsitze og skydestiger bliver poster (${posts.length})</label>` : '<p class="muted">Posterne sætter du i jagten (☰ › «Sæt og flyt poster»).</p>'}
+    <button class="primary big" data-act="huntCreate">Opret jagten</button>
+    ${last ? `<p class="muted" style="margin-top:14px">Sidste jagt: ${esc(last.navn)} (kode ${esc(last.kode)})</p>
+      <button class="big" data-act="huntOpen" data-url="${esc(last.leder)}">Åbn sidste jagt</button>` : ""}`);
+}
+async function huntCreate(btn) {
+  const name = $("#hNavn").value.trim() || "Jagt", radius = Math.max(5, Math.min(500, Math.round(+$("#hRadius").value || 30)));
+  const posts = $("#hPoster")?.checked ? huntPosts() : [];
+  const L_ = state.data.layers, bare = fc => fc && { type: "FeatureCollection", features: fc.features.map(f => ({ type: "Feature", geometry: f.geometry, properties: {} })) };
+  const kort = { skovafdelinger: { type: "FeatureCollection", features: L_.skovafdelinger.features.map(f => ({ type: "Feature", geometry: f.geometry,
+    properties: f.properties["træart"] ? { "træart": f.properties["træart"] } : {} })) }, navn: state.data.name || "" };
+  if (L_.ejendomsgraense) kort.ejendomsgraense = bare(L_.ejendomsgraense);
+  if (L_.adgangsveje) kort.adgangsveje = bare(L_.adgangsveje);
+  const call = async (p, method, body, leder) => {
+    const r = await fetch(JAGT_URL + p, { method, headers: { "content-type": "application/json", ...(leder ? { "x-leder": leder } : {}) }, body: body && JSON.stringify(body) });
+    const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.fejl || "HTTP " + r.status); return d;
+  };
+  if (!navigator.onLine) return toast("Telefonen har ikke net lige nu. Jagten skal oprettes med net.", 5000);
+  btn.disabled = true;
+  try {
+    toast("Opretter jagten …", 30000);
+    const { kode, leder } = await call("/api/ny", "POST", { navn: name });
+    const api = "/api/j/" + kode;
+    if (radius !== 30) await call(api, "POST", { type: "jagt", radius }, leder);
+    toast("Lægger skovkortet op …", 30000);
+    await call(api + "/kort", "PUT", kort, leder);
+    for (const [i, p] of posts.entries()) {
+      toast(`Sætter post ${i + 1} af ${posts.length} …`, 30000);
+      const s = await call(api, "POST", { type: "post", lat: p.lat, lng: p.lng }, leder);
+      await call(api, "POST", { type: "post", id: s.poster[s.poster.length - 1].id, nr: String(i + 1), note: p.note }, leder);
+    }
+    const jaeger = `${JAGT_URL}/j/${kode}`, lederLink = `${jaeger}#leder=${leder}`;
+    safeLS("jagt:" + state.data.id, JSON.stringify({ kode, navn: name, leder: lederLink, t: Date.now() }));
+    toast("Jagten er oprettet", 2000);
+    openSheet(`<div class="head"><h3>Jagten er klar</h3><button class="close">Luk</button></div>
+      <p style="text-align:center;font-size:40px;font-weight:800;letter-spacing:.25em;color:var(--green);margin:6px 0">${esc(kode)}</p>
+      <p class="muted" style="text-align:center;word-break:break-all">${esc(jaeger)}</p>
+      <button class="primary big" data-act="huntOpen" data-url="${esc(lederLink)}">Åbn jagten som jagtleder</button>
+      <div class="row" style="display:flex;gap:8px;margin-top:8px"><button style="flex:1" data-act="huntShare" data-url="${esc(jaeger)}" data-kode="${esc(kode)}" data-navn="${esc(name)}">Del med jægerne</button>
+        <button style="flex:1" data-act="huntCopy" data-url="${esc(jaeger)}">Kopiér link</button></div>
+      <p class="muted">I jagten viser ⇪ øverst koden og en QR-kode, som jægerne kan scanne fra din telefon. Jagten slettes af sig selv 7 dage efter sidste ændring.</p>`);
+  } catch (e) { btn.disabled = false; toast("Jagten kunne ikke oprettes: " + (e.message === "Failed to fetch" ? "ingen forbindelse" : e.message), 6000); }
+}
+async function huntShare(el) {
+  const { url, kode, navn } = el.dataset;
+  try { if (navigator.share) return await navigator.share({ title: navn, text: `${navn} – jagtkode ${kode}`, url }); } catch (e) { return; }
+  ACTIONS.huntCopy(el);
+}
+
 const ACTIONS = {
   openGpkg: () => $("#gpkgInput").click(),
   welcome: () => showWelcome(true),
@@ -3034,6 +3103,9 @@ const ACTIONS = {
   openTask: el => { const t = (state.tasks || []).find(x => x.id === el.dataset.id); if (t) taskForm(t); },
   pileList: () => pileList(), newStak: () => newPile("stak"), newStok: () => newPile("stok"),
   packageLink: askPackageLink,
+  hunt: huntSheet, huntCreate, huntShare,   // CLAUDE-3870
+  huntOpen: el => window.open(el.dataset.url, "_blank", "noopener"),
+  huntCopy: async el => { try { await navigator.clipboard.writeText(el.dataset.url); toast("Linket er kopieret"); } catch (e) { prompt("Kopiér linket:", el.dataset.url); } },
   chooseProperty: () => propertySheet(),
   updatePackage: () => { const u = onlinePackageUrl(); u ? downloadPackage(u) : askPackageLink(); },
   install: async () => {
