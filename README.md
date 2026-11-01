@@ -53,3 +53,10 @@ Appen kan også åbne `skovdriftsplan.gpkg` og `ortofoto_feltapp.mbtiles` hver f
 
 ## Hosting
 GitHub Pages fra `main`. Alle biblioteker ligger i `lib/`, så intet hentes udefra ud over OpenStreetMap-fliser.
+
+## Note til SkovPlan: minimumstid pr. projekt
+Der bør som minimum bruges **1 time pr. projekt**. Nogle kunder har stykker på 0,1–0,2 ha, og her ville tiden ellers ende på 6–12 minutter, som ikke dækker kørsel, opstart og skrivearbejde.
+- Tid/pris = max(beregnet tid, 1 time) pr. projekt, ikke pr. litra (flere små stykker under samme projekt giver stadig kun én time).
+- Mængder (areal, vedmasse, stamtal) vises som de faktiske tal og rundes ikke op.
+- Vis ikke pris pr. ha for små stykker uden at skrive «minimumstid» ved siden af.
+- Åbent: bekræft at minimum gælder pr. projekt og ikke pr. litra.
