@@ -51,5 +51,11 @@ Appen kan også åbne `skovdriftsplan.gpkg` og `ortofoto_feltapp.mbtiles` hver f
 - Entreprenørens link viser et basalt skovkort (litraer, veje, kortlinjer, grænse, indgange og liggepladser) fra SkovPlan.
 - Kræver `skovplan_felt_maengder_og_kort.sql` i Supabase.
 
+## Design og installationsguide (nov. 2026)
+- Kortet fylder hele skærmen; menu, ejendomsnavn og «find mig» svæver øverst. Nederst kun **Opgaver** og **＋ Registrér**.
+- **Registrér** har seks fliser: Foto, Note, Opgave, Prøveflade, Relaskop, Stak og stok. Direkte taksation ligger som en lille knap i litraet. Rollen «Ejer» ser ikke måleværktøjerne.
+- Menuen er kortet ned. Rute, jagt, note uden litra, pas på-advarsler, rolle og «slet eksporterede» ligger under **Flere funktioner**. Med online-synk ligger fil-eksporten under «Mine registreringer».
+- **Installationsguide**: første gang appen åbnes i browseren på en telefon, vises en guide (iPhone: Del › Føj til hjemmeskærm; Android/Chrome: appens egen installér-knap, ellers menuen ⋮). Lukkes den uden at installere, står der en lille linje øverst ved de næste åbninger, til appen er installeret eller linjen lukkes. Guiden ligger også i menuen. Kom man ind via et link på iPhone, kan linket kopieres og indsættes i den installerede app, fordi hjemmeskærm-appen har sit eget lager.
+
 ## Hosting
 GitHub Pages fra `main`. Alle biblioteker ligger i `lib/`, så intet hentes udefra ud over OpenStreetMap-fliser.

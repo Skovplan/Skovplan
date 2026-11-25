@@ -8,15 +8,19 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="favicon.png" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="SkovPlan Felt">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="stylesheet" href="lib/leaflet.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header id="top">
-  <button id="btnMenu" class="icon" aria-label="Menu">☰</button>
-  <div id="title"><img src="logo-symbol.png" alt="" class="brand">SkovPlan Felt<small id="where"></small></div>
-  <button id="btnTasks" class="icon" data-act="tasks" aria-label="Opgaver">☑</button>
-  <button id="btnLocate" class="icon" aria-label="Find mig">◎</button>
+  <button id="btnMenu" class="fab" aria-label="Menu"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  <div id="title"><img src="logo-symbol.png" alt="" class="brand"><div class="tt"><b id="propName">SkovPlan Felt</b><small id="where"></small></div></div>
+  <button id="btnTasks" class="fab hidden" data-act="tasks" aria-label="Opgaver"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg></button>
+  <button id="btnLocate" class="fab" aria-label="Find mig"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
 </header>
 
 <div id="map"></div>
@@ -29,46 +33,45 @@
 <button id="jobChip" class="hidden">⚑ Vis opgaven</button>
 <div id="pasBar" class="hidden" role="alert"></div>
 <div id="gpsChip" class="hidden"></div>
-<div id="quick" class="hidden"><button data-act="tasks" class="qside"><i>☑</i>Opgaver</button><button data-act="register" class="qmain"><i>＋</i>Registrér</button><button data-act="pileList" class="qside"><i>▤</i>Stakke</button></div>
+<div id="quick" class="hidden"><button data-act="tasks" class="qside" id="qTasks"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg><span>Opgaver</span></button><button data-act="register" class="qmain"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg><span>Registrér</span></button></div>
 <div id="remind" class="hidden"><div class="grow" id="remindTxt"></div><button id="remindGo" class="primary">Mål her</button><button id="remindX" aria-label="Luk">✕</button></div>
 
 <div id="empty" class="overlay hidden">
   <div class="card welcome">
     <img src="logo.png" alt="SkovPlan" class="logo">
-    <h2>SkovPlan Felt</h2>
-    <p>Åbn <b>linket</b> fra din skovplanlægger, eller vælg <b>feltpakken</b> (Feltpakke_<i>skovens navn</i>.zip), hvis du har fået den som fil.</p>
+    <h2>Hent din skov</h2>
+    <p>Åbn <b>linket</b> fra din skovplanlægger. Har du fået en <b>feltpakke</b> som fil, kan du vælge den i stedet.</p>
     <ul class="status"><li id="stMap">Skovkort mangler</li><li id="stOrtho">Ortofoto mangler</li></ul>
     <button class="primary big" data-act="packageLink">Indsæt link fra SkovPlan</button>
     <button class="big" data-act="openGpkg">Vælg feltpakke-fil</button>
-    <p class="muted">Pakken indeholder skovkort og ortofoto. Begge gemmes på telefonen og virker derefter uden net.
-      Du kan også vælge <b>skovdriftsplan.gpkg</b> og <b>ortofoto_feltapp.mbtiles</b> hver for sig.</p>
-    <button class="big hidden" id="welcomeClose" data-act="closeWelcome">Fortsæt</button>
+    <p class="muted small">Kort og ortofoto gemmes på telefonen og virker derefter uden net.</p>
+    <button class="big ghost hidden" id="welcomeClose" data-act="closeWelcome">Fortsæt til kortet</button>
   </div>
 </div>
 
 <section id="sheet" class="sheet hidden"></section>
 
 <nav id="menu" class="hidden">
-  <p class="mhead">I skoven</p>
-  <button data-act="tasks" data-c><i>☑</i>Opgaver</button>
-  <button data-act="pileList"><i>▤</i>Stakke og stokke</button>
-  <button data-act="track" id="btnTrack"><i>●</i>Optag ruten, jeg går</button>
-  <button data-act="hunt"><i>🦌</i>Opret jagt med skovkortet</button>
-  <button data-act="generalNote"><i>✎</i>Generel note med billeder</button>
-  <button data-act="listAll"><i>☰</i>Alle registreringer</button>
+  <div class="mtop" data-c><img src="logo-symbol.png" alt="" class="mlogo"><div><b>SkovPlan Felt</b><small id="menuProp"></small></div></div>
+  <button data-act="install" id="btnInstall" class="hidden mcall" data-c><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M12 8v6M9.5 11.5L12 14l2.5-2.5"/></svg></i><span>Installér som app<small>Ligger på hjemmeskærmen og virker uden net</small></span></button>
+  <button data-act="listAll"><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg></i>Mine registreringer</button>
+  <button data-act="sync" id="btnSync" class="hidden"><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-2.5-6.5z"/></svg></i>Send til SkovPlan nu</button>
+  <button data-act="export" id="btnExport"><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5"/><path d="M5 14v5h14v-5"/></svg></i>Eksportér til SkovPlan (fil)</button>
   <p class="mhead">Kort</p>
-  <button data-act="basemap"><i>▧</i>Skift baggrundskort</button>
-  <button data-act="layers"><i>◫</i>Vis lag (naturtyper, diger …)</button>
-  <button data-act="pasPaa" data-c><i>⚠</i>Pas på-advarsler</button>
-  <button data-act="chooseProperty" id="btnChoose" class="hidden"><i>⇄</i>Skift ejendom</button>
-  <p class="mhead">SkovPlan</p>
-  <button data-act="sync" id="btnSync" class="hidden"><i>⇅</i>Send til SkovPlan nu</button>
-  <button data-act="updatePackage" id="btnUpdatePkg" class="hidden"><i>⟳</i>Hent nyeste feltpakke</button>
-  <button data-act="export"><i>⇪</i>Eksportér til SkovPlan (fil)</button>
-  <button data-act="welcome" data-c><i>⌂</i>Åbn feltpakke / skovkort</button>
-  <button data-act="install" id="btnInstall" class="hidden" data-c><i>📲</i>Installér som app</button>
-  <button data-act="clearRegs" class="danger"><i>✕</i>Slet eksporterede registreringer</button>
-  <button data-act="role" data-c><i>☺</i>Skift rolle</button>
+  <button data-act="basemap"><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4L3 6.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></svg></i>Skift baggrundskort</button>
+  <button data-act="layers"><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></i>Vis lag</button>
+  <p class="mhead" data-c>Skov</p>
+  <button data-act="chooseProperty" id="btnChoose" class="hidden"><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h12l-3-3M17 17H5l3 3"/></svg></i>Skift ejendom</button>
+  <button data-act="updatePackage" id="btnUpdatePkg" class="hidden"><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg></i>Hent nyeste skovkort</button>
+  <button data-act="welcome" data-c><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></i>Åbn link eller feltpakke</button>
+  <details id="menuMore" data-c><summary>Flere funktioner</summary>
+    <button data-act="track" id="btnTrack"><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h6a4 4 0 0 0 0-8h-4a4 4 0 0 1 0-8h6"/></svg></i>Optag ruten, jeg går</button>
+    <button data-act="hunt"><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21v-6M8 9l4 6 4-6"/><path d="M6 3l2 6M18 3l-2 6M4 5l3 1M20 5l-3 1"/></svg></i>Opret jagt med skovkortet</button>
+    <button data-act="generalNote"><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 10h8M8 14h5"/></svg></i>Note uden litra</button>
+    <button data-act="pasPaa" data-c><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17v.01"/></svg></i>Pas på-advarsler</button>
+    <button data-act="role" data-c><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></i>Skift rolle</button>
+    <button data-act="clearRegs" class="danger"><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></i>Slet eksporterede registreringer</button>
+  </details>
   <p class="muted" id="menuInfo" data-c></p>
 </nav>
 

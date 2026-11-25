@@ -399,3 +399,125 @@ table.amt.in tr:has(+ tr.len) td { border-bottom: none; }
 .jagt-navn { display: none; background: rgba(255,255,255,.8); border: 0; box-shadow: none; padding: 0 4px; font-size: 10.5px; font-weight: 600; color: #4a2a0c; }
 .jagt-navn::before { display: none; }
 .vis-jagtnavne .jagt-navn { display: block; }
+
+/* ================= Overhaul nov. 2026: roligere udtryk, kortet i fuld skærm, færre knapper ================= */
+:root { --green: #2c5a38; --green-dark: #1f4229; --soft: #f3f5f1; --tile: #f0f3ee; --line: #e2e6df; --fg: #18201b; --muted: #687168;
+  --shadow: 0 2px 12px rgba(16,32,20,.16); --shadow-lg: 0 10px 40px rgba(16,32,20,.22); --radius: 16px; }
+html, body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+button { border-color: var(--line); }
+button svg { flex: none; }
+.small { font-size: 13px; }
+.center { text-align: center; }
+
+/* topbjælken svæver over kortet */
+#top { position: fixed; top: 0; left: 0; right: 0; background: transparent; box-shadow: none; min-height: 0; gap: 8px; z-index: 1000;
+  padding: calc(env(safe-area-inset-top) + 10px) 10px 0; pointer-events: none; align-items: center; }
+#top > * { pointer-events: auto; }
+.fab { width: 46px; height: 46px; min-height: 46px; padding: 0; border-radius: 50%; border: 0; background: #fff; color: var(--green-dark);
+  box-shadow: var(--shadow); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+#title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; text-align: left; background: rgba(255,255,255,.96);
+  border-radius: 23px; height: 46px; padding: 0 14px 0 6px; box-shadow: var(--shadow); color: var(--fg); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+#title .brand { height: 34px; width: 34px; object-fit: contain; margin: 0; padding: 3px; background: var(--soft); border-radius: 50%; vertical-align: 0; }
+#title .tt { min-width: 0; line-height: 1.15; }
+#title b { display: block; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#title small { font-size: 12px; color: var(--muted); opacity: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#title small:empty { display: none; }
+#btnMenu.pending::after { top: 4px; right: 4px; border-color: #fff; }
+#toast { top: calc(66px + env(safe-area-inset-top)); border-radius: 14px; background: rgba(24,32,27,.92); }
+#navbar, #pasBar { top: calc(66px + env(safe-area-inset-top)); }
+body:has(#pasBar:not(.hidden)) #navbar { top: calc(156px + env(safe-area-inset-top)); }
+
+/* nederst: to knapper */
+#quick { gap: 4px; padding: 5px; border-radius: 26px; box-shadow: var(--shadow-lg); }
+#quick button { gap: 8px; }
+#quick .qside { padding: 8px 16px 8px 12px; color: var(--green-dark); position: relative; }
+#quick .qmain { padding: 10px 22px 10px 16px; border-radius: 21px; }
+#qTasks[data-n]:not([data-n=""])::after { content: attr(data-n); position: absolute; top: 2px; left: 26px; min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 9px; background: #e8710a; color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+#gpsChip { border-radius: 12px; padding: 4px 9px; }
+
+/* menuen: skuffe fra venstre */
+#menu { top: 0; bottom: 0; left: 0; width: min(330px, 86vw); max-height: none; border-radius: 0 22px 22px 0; z-index: 1300;
+  padding: calc(env(safe-area-inset-top) + 14px) 10px calc(env(safe-area-inset-bottom) + 14px);
+  box-shadow: 0 0 0 100vmax rgba(16,28,20,.38), var(--shadow-lg); }
+#menu .mtop { display: flex; align-items: center; gap: 12px; padding: 4px 10px 14px; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
+#menu .mlogo { width: 40px; height: 40px; object-fit: contain; background: var(--soft); border-radius: 12px; padding: 4px; }
+#menu .mtop b { display: block; font-size: 17px; }
+#menu .mtop small { display: block; color: var(--muted); font-size: 13px; }
+#menu button { font-size: 16px; gap: 14px; }
+#menu button i { width: 34px; height: 34px; border-radius: 10px; background: var(--tile); }
+#menu button i svg { width: 19px; height: 19px; }
+#menu .mcall { background: var(--green); color: #fff; margin: 4px 0 6px; padding: 12px; }
+#menu .mcall:hover, #menu .mcall:active { background: var(--green-dark); }
+#menu .mcall i { background: rgba(255,255,255,.16); color: #fff; }
+#menu .mcall span { display: flex; flex-direction: column; font-weight: 600; }
+#menu .mcall small { font-weight: 400; font-size: 12px; opacity: .85; }
+#menu details { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 4px; }
+#menu summary { list-style: none; cursor: pointer; padding: 12px 10px; font-size: 14px; font-weight: 600; color: var(--muted); display: flex; justify-content: space-between; }
+#menu summary::-webkit-details-marker { display: none; }
+#menu summary::after { content: "›"; font-size: 20px; line-height: 14px; transition: transform .15s; }
+#menu details[open] summary::after { transform: rotate(90deg); }
+#menu #menuInfo { font-size: 12px; }
+body.role-entreprenor #menu > :not([data-c]), body.role-entreprenor #menu details > button:not([data-c]) { display: none; }
+
+/* ark */
+.sheet { padding: 8px 18px calc(18px + env(safe-area-inset-bottom)); }
+.sheet .head { align-items: flex-start; margin-bottom: 4px; }
+.sheet .htitle { flex: 1; min-width: 0; }
+.sheet .htitle h3 { margin: 2px 0 0; font-size: 24px; }
+.sheet .htitle .muted { font-size: 14px; }
+.sheet .close { border-radius: 18px; padding: 4px 14px; font-size: 15px; }
+.facts { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; margin: 10px 0 4px; }
+.facts div { background: var(--soft); padding: 8px 10px; }
+.facts b { font-size: 18px; }
+.tiles { gap: 10px; margin: 14px 0 6px; }
+.tile { min-height: 84px; background: var(--tile); font-size: 14px; border-radius: 18px; gap: 6px; }
+.tile i { width: 40px; height: 40px; border-radius: 50%; background: #fff; display: inline-flex; align-items: center; justify-content: center; }
+.tile svg { width: 22px; height: 22px; }
+.linkbtn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; background: transparent; border: 0; color: var(--green);
+  font-weight: 600; font-size: 15px; min-height: 40px; }
+.linkbtn svg { width: 18px; height: 18px; }
+button.ghost { color: var(--green); }
+body.role-ejer [data-pro] { display: none !important; }
+
+/* velkomst og roller */
+.overlay { background: rgba(16,28,20,.5); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+.card { border-radius: 24px; padding: 24px 20px 18px; box-shadow: var(--shadow-lg); }
+.card.welcome { width: min(400px, 100%); }
+.card.welcome .logo { width: 96px; margin-bottom: 6px; }
+.card.welcome h2 { font-size: 24px; margin: 4px 0 6px; }
+.card.welcome p { text-align: center; color: #3a443c; }
+.card.welcome .big + .big { margin-top: 8px; }
+ul.status { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin: 12px 0 16px; }
+ul.status li { margin: 0; border-radius: 14px; padding: 5px 12px; font-size: 13px; }
+.roles button { border-radius: 16px; padding: 14px 16px; }
+body:has(#roleCard) #empty, body:has(#installGuide) #empty { display: none !important; }
+
+/* installationsguide */
+.guide { position: fixed; inset: 0; z-index: 1600; background: linear-gradient(180deg, #e9f0e6 0%, #f8faf6 55%); overflow-y: auto;
+  display: flex; align-items: center; justify-content: center; padding: calc(env(safe-area-inset-top) + 20px) 18px calc(env(safe-area-inset-bottom) + 20px); }
+.ig-card { width: min(420px, 100%); text-align: center; }
+.ig-icon { width: 88px; height: 88px; border-radius: 22px; box-shadow: var(--shadow-lg); margin: 0 auto 18px; display: block; }
+.guide h2 { font-size: 26px; line-height: 1.2; margin: 0 0 8px; letter-spacing: -.01em; }
+.ig-lead { color: #3a443c; margin: 0 0 20px; }
+.ig-steps { list-style: none; margin: 0 0 16px; padding: 0; text-align: left; background: #fff; border-radius: 20px; box-shadow: var(--shadow); }
+.ig-steps li { display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px; line-height: 1.45; }
+.ig-steps li + li { border-top: 1px solid var(--line); }
+.ig-n { flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--green); color: #fff; font-weight: 700; font-size: 14px;
+  display: inline-flex; align-items: center; justify-content: center; margin-top: -1px; }
+.ig-key { display: inline-flex; align-items: center; gap: 5px; background: var(--soft); border: 1px solid var(--line); border-radius: 8px;
+  padding: 1px 8px 1px 5px; font-weight: 600; white-space: nowrap; vertical-align: -1px; }
+.ig-key svg { width: 18px; height: 18px; color: #1a73e8; }
+.ig-body .primary.big { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 18px; min-height: 56px; border-radius: 16px; }
+.ig-link { text-align: left; background: #fff8e6; border: 1px solid #f0d9a0; border-radius: 16px; padding: 12px 14px; font-size: 14px; margin-bottom: 14px; }
+.ig-link .big { margin-top: 10px; background: #fff; }
+.guide .ghost { margin-top: 4px; }
+#installBar { position: fixed; z-index: 990; left: 10px; right: 10px; top: calc(env(safe-area-inset-top) + 64px); display: flex; align-items: center; gap: 6px;
+  background: var(--green); color: #fff; border-radius: 16px; padding: 4px 4px 4px 12px; box-shadow: var(--shadow); }
+#installBar svg { width: 20px; height: 20px; display: block; }
+#installBar button { background: transparent; border: 0; color: #fff; font-weight: 600; text-align: left; min-height: 40px; padding: 6px 8px; }
+#installBar .grow { flex: 1; }
+body:has(#navbar:not(.hidden)) #installBar, body:has(#pasBar:not(.hidden)) #installBar { display: none; }
+#menu > *, #menu details > * { flex-shrink: 0; }
+#menu { box-shadow: var(--shadow-lg); }
+body:has(#menu:not(.hidden))::after { content: ""; position: fixed; inset: 0; z-index: 1250; background: rgba(16,28,20,.38); }
