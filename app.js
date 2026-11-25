@@ -2099,6 +2099,15 @@ const sameName = (a, b) => !!a && !!b && a.trim().toLowerCase() === b.trim().toL
 const openTasks = () => (state.tasks || []).filter(t => !t.deleted && t.status !== "udført");
 const isMine = t => sameName(t.assignee, myName()) || (!t.assignee && sameName(t.by, myName()));
 const todayIso = () => new Date().toISOString().slice(0, 10);
+/* CLAUDE-5600: en opgave fra driftsplanen, der meldes udført her, bliver selv «Afsluttet» i SkovPlan (hvert 2. minut,
+   når ejendommen er åben). SkovPlan kvitterer med «iPlanen» på opgaven, så telefonen kan vise, at den er ført ind. */
+const fromPlan = t => !!t.aktivitet_id;
+const inPlan = t => fromPlan(t) && t.status === "udført" && (t.iPlanen?.status === "Afsluttet" || t.doneBy === "Driftsplanen");
+function planNote(t, long) {
+  if (!fromPlan(t) || t.status !== "udført") return "";
+  if (inPlan(t)) return long ? `✓ Ført ind i driftsplanen${t.iPlanen?.at ? " " + new Date(t.iPlanen.at).toLocaleDateString("da-DK") : ""}` : "✓ i driftsplanen";
+  return long ? "⏳ Kommer i driftsplanen, næste gang SkovPlan er åben på ejendommen" : "⏳ venter på SkovPlan";
+}
 async function loadTasks() {
   state.tasks = state.data ? (await db.get("kv", "opgaver:" + state.data.id)) || [] : [];
   drawTaskMarkers(); updateTaskBadge();
@@ -2202,7 +2211,8 @@ function taskLine(t) {
   return `<li data-task="${esc(t.id)}" class="task${t.status === "udført" ? " done" : ""}">
     <button class="tick" data-tick="${esc(t.id)}" aria-label="${t.status === "udført" ? "Genåbn" : "Udført"}">${t.status === "udført" ? "✓" : ""}</button>
     <div class="grow"><b>${esc(t.title)}</b>${t.status && t.status !== "åben" && t.status !== "udført" ? " " + statusChip(t.status) : ""}<br><span class="muted small">${[t.stand ? "litra " + esc(t.stand.label) : "", who,
-      t.by && !sameName(t.by, myName()) ? "fra " + esc(t.by) : "", due ? `<span class="${late ? "late" : ""}">frist ${due}</span>` : "", t.pdf ? "📄" : ""].filter(Boolean).join(" · ")}</span></div></li>`;
+      t.by && !sameName(t.by, myName()) ? "fra " + esc(t.by) : "", due ? `<span class="${late ? "late" : ""}">frist ${due}</span>` : "", t.pdf ? "📄" : "",
+      planNote(t) ? `<span class="${inPlan(t) ? "inplan" : ""}">${planNote(t)}</span>` : ""].filter(Boolean).join(" · ")}</span></div></li>`;
 }
 /* CLAUDE-1797: projekter fra SkovPlan. Opgaverne står samlet under projektet (fx afdrift med skovning, udkørsel og flis),
    så hver entreprenør kan se sin del, og skovfogeden kan se hele projektet. */
@@ -2239,9 +2249,12 @@ function taskList(tab = "mine") {
 }
 async function toggleDone(t) {
   const done = t.status !== "udført";
-  await putTask({ ...t, status: done ? "udført" : "åben", doneAt: done ? new Date().toISOString() : null, doneBy: done ? myName() || null : null });
+  if (!done && inPlan(t) && !confirm("Opgaven står som Afsluttet i driftsplanen. Åbn den også igen i SkovPlan, ellers lukker planen den igen næste gang, den ændres.\n\nÅbn opgaven igen her?")) return;
+  const n = { ...t, status: done ? "udført" : "åben", doneAt: done ? new Date().toISOString() : null, doneBy: done ? myName() || null : null };
+  delete n.iPlanen;   // CLAUDE-5600: en ny udført-melding skal føres ind igen
+  await putTask(n);
   if (navigator.vibrate) navigator.vibrate(30);
-  toast(done ? "Udført ✓" : "Opgaven er åben igen");
+  toast(done ? (fromPlan(t) ? (syncCfg() ? "Udført ✓ Kommer i driftsplanen, når SkovPlan er åben" : "Udført ✓ (uden online-synk kommer det ikke i driftsplanen af sig selv)") : "Udført ✓") : "Opgaven er åben igen", done && fromPlan(t) ? 5000 : undefined);
 }
 function taskForm(t, back) {
   if (isContractor()) return t ? openOwnJob(t) : toast("Opgaver laves af skovfogeden");
@@ -2261,7 +2274,7 @@ function taskForm(t, back) {
     <label class="check"><input type="checkbox" id="tHere"${t.lat ? " checked" : ""}${state.me ? "" : " disabled"}> Sæt opgaven på kortet, hvor jeg står${state.me ? "" : " (venter på GPS)"}</label>
     <label>Beskrivelse</label><textarea id="tNote">${esc(t.note || "")}</textarea>
     ${isNew ? "" : jobExtrasHtml(t)}
-    ${isNew ? "" : `<p class="muted small">Lavet af ${esc(t.by || "?")} ${new Date(t.created).toLocaleDateString("da-DK")}${t.status === "udført" ? ` · udført${t.doneBy ? " af " + esc(t.doneBy) : ""} ${new Date(t.doneAt).toLocaleDateString("da-DK")}` : ""}</p>`}
+    ${isNew ? "" : `<p class="muted small">Lavet af ${esc(t.by || "?")} ${new Date(t.created).toLocaleDateString("da-DK")}${t.status === "udført" ? ` · udført${t.doneBy ? " af " + esc(t.doneBy) : ""} ${new Date(t.doneAt).toLocaleDateString("da-DK")}` : ""}${planNote(t, true) ? `<br><span class="${inPlan(t) ? "inplan" : ""}">${planNote(t, true)}</span>` : ""}</p>`}
     <div class="stack"><button class="primary big" id="tSave">${isNew ? "Gem opgave" : "Gem ændringer"}</button>
       ${isNew ? "" : `<button class="big" id="tDone">${t.status === "udført" ? "↺ Åbn igen" : "✓ Udført"}</button>`}
       ${isNew || !taskPoint(t) ? "" : '<button id="tGo">➜ Gå hertil</button>'}
@@ -2477,7 +2490,8 @@ function drawJob(fit) {
   openSheet(`<div class="head"><h3>${esc(t.title)}</h3><button class="close" id="jHide">Kort</button></div>
     <p>${statusChip(t.status)} <span class="muted">${esc(t.ejendom || t.ejendomNavn || "")}${t.stand ? " · litra " + esc(t.stand.label) : ""}${t.projekt?.navn ? " · 📁 " + esc(t.projekt.navn) : ""}</span>
       ${t.due ? `<br><span class="${late ? "late" : ""}">Frist ${new Date(t.due + "T12:00").toLocaleDateString("da-DK", { weekday: "long", day: "numeric", month: "long" })}</span>` : ""}
-      ${t.by ? `<br><span class="muted small">Fra ${esc(t.by)}</span>` : ""}</p>
+      ${t.by ? `<br><span class="muted small">Fra ${esc(t.by)}</span>` : ""}
+      ${planNote(t, true) ? `<br><span class="small ${inPlan(t) ? "inplan" : "muted"}">${planNote(t, true)}</span>` : ""}</p>
     ${t.note ? `<div class="jnote">${esc(t.note).replace(/\n/g, "<br>")}</div>` : ""}
     ${t.punkt ? `<div class="actions"><button data-jgo>➜ Vis vej i appen</button><a class="btn" href="https://www.google.com/maps/dir/?api=1&destination=${t.punkt[0]},${t.punkt[1]}" target="_blank" rel="noopener">Google Maps</a></div>` : ""}
     ${jobExtrasHtml(t)}

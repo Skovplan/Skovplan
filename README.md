@@ -14,6 +14,8 @@ Adresse: https://skovplan.github.io/Skovplan/
 ### Online-synkronisering (Supabase)
 Er synk sat op i SkovPlan («Opsæt online-synk med SkovPlan Felt…»), har feltpakken en ejendomsnøgle, og appen sender selv
 registreringer og fotos, når telefonen har net («Send til SkovPlan nu» i menuen tvinger det). SkovPlan henter dem, når ejendommen åbnes.
+En opgave fra driftsplanen, der meldes **udført** i appen (✓ eller entreprenørens «Opgaven er færdig»), bliver selv «Afsluttet» i
+SkovPlan, når ejendommen er åben (med forløb og følgeopgaver som i Opgaver). Appen viser «✓ Ført ind i driftsplanen», når SkovPlan har gjort det.
 Databasen oprettes med `skovplan_felt_opsaetning.sql` (ligger i projektfilerne under feltapp/supabase).
 
 Appen kan også åbne `skovdriftsplan.gpkg` og `ortofoto_feltapp.mbtiles` hver for sig. Filtypen afgøres af indholdet, ikke navnet.
