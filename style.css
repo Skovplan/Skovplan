@@ -521,3 +521,8 @@ body:has(#navbar:not(.hidden)) #installBar, body:has(#pasBar:not(.hidden)) #inst
 #menu > *, #menu details > * { flex-shrink: 0; }
 #menu { box-shadow: var(--shadow-lg); }
 body:has(#menu:not(.hidden))::after { content: ""; position: fixed; inset: 0; z-index: 1250; background: rgba(16,28,20,.38); }
+/* ejendomsnavnet er en knap: skift ejendom */
+button#title { border: 0; font: inherit; min-height: 46px; cursor: pointer; }
+#title .tt { flex: 1; display: flex; flex-direction: column; }
+#title .chev { color: var(--muted); flex: none; }
+body.jobmode #title { pointer-events: none; } body.jobmode #title .chev { display: none; }

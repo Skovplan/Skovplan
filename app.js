@@ -3178,6 +3178,8 @@ document.addEventListener("click", e => {
   if (el) { e.preventDefault(); $("#menu").classList.add("hidden"); ACTIONS[el.dataset.act]?.(el); return; }
   if (!e.target.closest("#menu, #btnMenu")) $("#menu").classList.add("hidden");
 });
+/* Tryk på ejendomsnavnet øverst: skift ejendom (eller hent en, hvis der ingen er). */
+$("#title").onclick = () => { if (document.body.classList.contains("jobmode")) return; $("#menu").classList.add("hidden"); state.data ? propertySheet() : showWelcome(true); };
 $("#btnMenu").onclick = () => { refreshMenuInfo(); $("#menu").classList.toggle("hidden"); };
 /* CLAUDE-1279: «Opgaver · ＋ Registrér · Stakke» nederst, når intet ark er åbent */
 new MutationObserver(() => updateQuick()).observe(sheet, { attributes: true, attributeFilter: ["class"] });
