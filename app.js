@@ -570,7 +570,7 @@ function drawData() {
   }
   updateLabels();
   prepareAutoColors(new Set(L_.skovafdelinger.features.map(f => f.properties["træart"]))).then(restyle);
-  $("#where").textContent = state.data.name || "";
+  $("#where").textContent = ""; $("#propName").textContent = state.data.name || "SkovPlan Felt";
 }
 function standStyle(f, counts) {
   const sel = state.selected && standKey(state.selected.properties) === standKey(f.properties);
@@ -657,7 +657,7 @@ function startGps() {
     const km = kmFromForest(lat, lon);
     if (follow && km <= 1) map.setView([lat, lon], Math.max(map.getZoom(), 16));
     const st = standAt(lon, lat);
-    $("#where").textContent = km > 1 ? `${state.data?.name || ""} · du er ${fmt(km, km < 10 ? 1 : 0)} km væk`
+    $("#where").textContent = km > 1 ? `Du er ${fmt(km, km < 10 ? 1 : 0)} km væk`
       : (st ? `Du står i ${standLabel(st.properties)} · ` : "") + `±${Math.round(accuracy)} m`;
     trackPoint(lat, lon, accuracy, pos.timestamp); remindStand(lat, lon, accuracy); updateNav();
     pasCheck();   // CLAUDE-1795
@@ -891,18 +891,20 @@ const ICON = {
   stok: SVG('<rect x="3" y="9" width="15" height="6" rx="1"/><ellipse cx="18" cy="12" rx="2.5" ry="3"/>'),
   generel: SVG('<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 10h8M8 14h5"/>'),
 };
+/* Overhaul: seks fliser, som dækker det meste i marken. Målinger (data-pro) vises ikke for ejere.
+   Direkte taksation ligger som en lille knap under litraets fliser. */
 const TILES = [
-  ["newPlot", ICON.plot, "Prøveflade", true], ["vinkel", ICON.relaskop, "Relaskop"], ["taksation", ICON.taks, "Taksér"],
-  ["photo", ICON.foto, "Foto"], ["note", ICON.note, "Note"], ["newTask", ICON.opgave, "Opgave"]];
+  ["photo", ICON.foto, "Foto"], ["note", ICON.note, "Note"], ["newTask", ICON.opgave, "Opgave"],
+  ["newPlot", ICON.plot, "Prøveflade", 1], ["vinkel", ICON.relaskop, "Relaskop", 1], ["pileList", ICON.stak, "Stak og stok", 1]];
 function regTiles(inStand) {
-  const extra = inStand ? [] : [["newStak", ICON.stak, "Stak"], ["newStok", ICON.stok, "Stok"], ["generalNote", ICON.generel, "Generel note"]];
-  return `<div class="tiles">${[...TILES, ...extra].map(([act, ic, lbl, main]) => `<button class="tile${main ? " main" : ""}" data-act="${act}"><i>${ic}</i>${lbl}</button>`).join("")}</div>`;
+  return `<div class="tiles">${TILES.map(([act, ic, lbl, pro]) => `<button class="tile" data-act="${act === "note" && !inStand && !currentStand() ? "generalNote" : act}"${pro ? " data-pro" : ""}><i>${ic}</i>${lbl}</button>`).join("")}</div>
+    ${inStand ? `<button class="linkbtn" data-act="taksation" data-pro>${ICON.taks}Direkte taksation af litraet</button>` : ""}`;
 }
 function registerSheet() {
   const stand = currentStand();
   if (stand) { const f = (state.data?.layers.skovafdelinger.features || []).find(x => standKey(x.properties) === stand.key); if (f) { state.selected = f; restyle(); } }
   openSheet(`<div class="head"><h3>Registrér</h3><button class="close">Luk</button></div>
-    <p class="muted">${stand ? `I litra <b>${esc(stand.label)}</b>${state.selected ? "" : " (hvor du står)"}` : "Du står ikke i et litra. Tryk på et litra på kortet, eller vælg en generel note, stak eller stok."}</p>
+    <p class="muted">${stand ? `I litra <b>${esc(stand.label)}</b>${state.selected ? "" : " (hvor du står)"}` : "Du står ikke i et litra. Noten gemmes uden litra; tryk på et litra på kortet for at måle i det."}</p>
     ${regTiles(false)}`);
 }
 
@@ -916,13 +918,14 @@ function selectStand(f) {
   state.selected = f; restyle();
   const p = f.properties, key = standKey(p), regs = state.regs.filter(r => r.stand?.key === key);
   const s = standSummary(regs);
-  const fact = (v, lbl, d = 1) => `<div><b>${v === null || v === undefined || v === "" ? "–" : typeof v === "number" ? fmt(v, d) : esc(v)}</b><span>${lbl}</span></div>`;
+  const fact = (v, lbl, d = 1) => v === null || v === undefined || v === "" || Number.isNaN(v) ? "" : `<div><b>${typeof v === "number" ? fmt(v, d) : esc(v)}</b><span>${lbl}</span></div>`;
+  const dataYear = p.taksationsaar || p.dataaar;
   openSheet(`
-    <div class="head"><h3>${esc(standLabel(p))} · ${esc(p["træart"] || "")}</h3><button class="close">Luk</button></div>
+    <div class="head"><div class="htitle"><h3>${esc(standLabel(p))}</h3><span class="muted">${esc(p["træart"] || "")}${p.etableringsaar ? " · anlagt " + p.etableringsaar : ""}${dataYear ? " · data fra " + dataYear : ""}</span></div><button class="close">Luk</button></div>
     <div class="facts">
-      ${fact(standArea(key), "areal ha", 2)}${fact(p.alder ?? (p.etableringsaar ? YEAR - p.etableringsaar : null), "alder", 0)}${fact(p.etableringsaar ? String(p.etableringsaar) : null, "anlagt")}
+      ${fact(standArea(key), "ha", 2)}${fact(p.alder ?? (p.etableringsaar ? YEAR - p.etableringsaar : null), "år", 0)}
       ${fact(num(p.middelhoejde_m), "Hg m")}${fact(num(p.middeldiameter_cm), "Dg cm")}${fact(num(p.stamtal_ha), "stk/ha", 0)}
-      ${fact(num(p.grundflade_m2_ha), "G m²/ha")}${fact(num(p.vedmasse_m3_ha), "m³/ha", 0)}${fact(p.taksationsaar || p.dataaar ? String(p.taksationsaar || p.dataaar) : null, "data fra")}
+      ${fact(num(p.grundflade_m2_ha), "G m²/ha")}${fact(num(p.vedmasse_m3_ha), "m³/ha", 0)}
     </div>
     ${p.p3_status === "Ja" ? `<p class="p3">§3-beskyttet${p.p3_naturtyper ? ": " + esc(p.p3_naturtyper) : ""}</p>` : ""}
     ${p["bemærkning"] ? `<p class="muted">${esc(p["bemærkning"])}</p>` : ""}
@@ -1709,11 +1712,7 @@ function editReg(id) {
 function listAll() {
   state.selected = null; restyle();
   const regs = state.regs.filter(r => !r.data.parent).sort((a, b) => b.created.localeCompare(a.created));
-  openSheet(`<div class="head"><h3>Alle registreringer (${regs.length})</h3><button class="close">Luk</button></div>
-    <div class="actions"><button class="primary" data-act="newPlot">+ Prøveflade</button><button data-act="photo">📷 Foto</button><button data-act="note">✎ Note</button></div>
-    <button class="big" data-act="vinkel">◔ Relaskopmåling</button>
-    <button class="big" data-act="generalNote">✎ Generel note (ikke knyttet til et litra)</button>
-    <button class="big" data-act="pileList">Stakke og stokke (opmåling)</button>
+  openSheet(`<div class="head"><h3>Mine registreringer (${regs.length})</h3><button class="close">Luk</button></div>
     ${regs.length ? `<ul class="list">${regs.map(regItem).join("")}</ul>` : '<p class="muted">Ingen registreringer endnu. Tryk på et litra på kortet for at begynde.</p>'}
     <button class="primary big" data-act="export">Eksportér til SkovPlan</button>`);
   hydrateThumbs();
@@ -2135,6 +2134,7 @@ function askRole(force) {
 }
 function applyRole() {
   document.body.classList.toggle("role-entreprenor", isContractor());
+  document.body.classList.toggle("role-ejer", role() === "ejer");   // ejeren ser ikke måleværktøjerne
   if (isContractor() && state.selected) { state.selected = null; closeSheet(); }
   drawRegMarkers(); drawTaskMarkers(); updateTaskBadge(); updateQuick();
 }
@@ -2159,6 +2159,7 @@ function updateTaskBadge() {
   const b = $("#btnTasks"); if (!b) return;
   const n = openTasks().filter(isMine).length;
   b.dataset.n = n || ""; b.title = n ? `${n} åbne opgaver til dig` : "Opgaver";
+  const q = $("#qTasks"); if (q) q.dataset.n = n || "";
 }
 let taskLayer = null;
 function taskPoint(t) {
@@ -3056,6 +3057,9 @@ function refreshMenuInfo() {
   $("#menuInfo").textContent = (roleName() ? roleName() + " · " : "") + `${state.data ? (state.data.name + " · indlæst " + new Date(state.data.loaded).toLocaleDateString("da-DK")) : "Intet skovkort"} · ${state.ortho ? "ortofoto gemt" : "intet ortofoto"} · ${n} registreringer` +
     (c ? ` · online: ${ns ? ns + " venter" : "alt sendt"}${state.syncStatus ? " (" + state.syncStatus + ")" : ""}` : (ne ? `, ${ne} ikke eksporteret` : ""));
   $("#btnSync")?.classList.toggle("hidden", !c);
+  $("#btnExport")?.classList.toggle("hidden", !!c);   // med online-synk ligger fil-eksporten under «Mine registreringer»
+  $("#menuProp").textContent = state.data ? state.data.name + (roleName() ? " · " + roleName() : "") : (roleName() || "");
+  $("#btnInstall")?.classList.toggle("hidden", isStandalone() || !(state.installPrompt || isMobile()));
   $("#btnMenu").classList.toggle("pending", c ? ns > 0 : ne > 0);
   $("#btnMenu").title = c ? (ns ? `${ns} venter på at blive sendt` : "Alt er sendt til SkovPlan") : (ne ? `${ne} ikke eksporteret` : "");
   $("#btnUpdatePkg")?.classList.toggle("hidden", !onlinePackageUrl());
@@ -3164,11 +3168,7 @@ const ACTIONS = {
   huntCopy: async el => { try { await navigator.clipboard.writeText(el.dataset.url); toast("Linket er kopieret"); } catch (e) { prompt("Kopiér linket:", el.dataset.url); } },
   chooseProperty: () => propertySheet(),
   updatePackage: () => { const u = onlinePackageUrl(); u ? downloadPackage(u) : askPackageLink(); },
-  install: async () => {
-    if (state.installPrompt) { state.installPrompt.prompt(); const r = await state.installPrompt.userChoice; state.installPrompt = null;
-      if (r.outcome === "accepted") $("#btnInstall").classList.add("hidden"); return; }
-    alert("Tryk på Del-knappen (firkanten med pilen) i Safari og vælg «Føj til hjemmeskærm». Så ligger SkovPlan Felt som en app.");
-  },
+  install: () => installGuide(true),
   photo: () => $("#photoInput").click(),
   edit: el => editReg(el.dataset.id),
   cancelForm: () => { const f = state.selected; f ? selectStand(f) : closeSheet(); },
@@ -3262,6 +3262,10 @@ async function chooseProperty(url) {
 }
 function askPackageLink() {
   const text = prompt("Indsæt linket, som du har fået fra SkovPlan:");
+  try {   // entreprenør-, opgave- og afhentningslinks: åbn dem her i appen (fx efter installation på iPhone)
+    const u = new URL(String(text || "").trim()), q = u.searchParams;
+    if (["entr", "opgave", "afhent"].some(k => q.get(k))) { location.href = location.pathname + u.search + u.hash; return; }
+  } catch (e) { /* ikke et link */ }
   try { const k = new URL(String(text || "").trim()).searchParams.get("kunde"); if (k) return chooseProperty(new URL(k).href); } catch (e) { /* ikke et kundelink */ }
   const url = packageUrlFrom(text);
   if (url) downloadPackage(url); else toast("Det ligner ikke et link fra SkovPlan");
@@ -3403,7 +3407,7 @@ function drawTrack() {
   else if (trackLine) trackLine.setLatLngs(pts);
   else trackLine = L.polyline(pts, { color: "#e8710a", weight: 4, opacity: 0.9, interactive: false }).addTo(map);
   const b = $("#btnTrack");
-  if (b) b.textContent = state.track ? `■ Stop ruten (${fmtLen(trackLength(pts))})` : "● Optag ruten, jeg går";
+  if (b) b.lastChild.textContent = state.track ? `Stop ruten (${fmtLen(trackLength(pts))})` : "Optag ruten, jeg går";
   $("#trackDot").classList.toggle("hidden", !state.track);
 }
 function trackPoint(lat, lon, acc, t) {
@@ -3561,6 +3565,81 @@ async function propertySheet() {
   });
 }
 
+/* ------------------------------------------------------------------ Installér som app: guide første gang
+   Vises automatisk første gang appen åbnes i browseren på en telefon. Lukkes den uden at installere, står der en lille
+   linje øverst ved de næste åbninger (kan lukkes), indtil appen er installeret. Kører appen fra hjemmeskærmen, vises intet. */
+const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const isMobile = () => isIOS() || /Android|Mobile/i.test(navigator.userAgent);
+const SHARE_IC = SVG('<path d="M12 3v12M8 7l4-4 4 4"/><path d="M6 11H5v10h14V11h-1"/>');
+const ADD_IC = SVG('<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/>');
+const DOTS_IC = SVG('<circle cx="12" cy="5" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="19" r="1.3" fill="currentColor"/>');
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); state.installPrompt = e; refreshInstall(); });
+window.addEventListener("appinstalled", () => { markInstalled(); toast("SkovPlan Felt er installeret. Åbn den fra hjemmeskærmen.", 6000); });
+function markInstalled() { safeLS("installeret", "1"); state.installPrompt = null; $("#installGuide")?.remove(); $("#installBar")?.remove(); $("#btnInstall")?.classList.add("hidden"); }
+function refreshInstall() {
+  $("#btnInstall")?.classList.toggle("hidden", isStandalone() || !(state.installPrompt || isMobile()));
+  const g = $("#installGuide"); if (g && state.installPrompt) g.querySelector(".ig-body").innerHTML = installSteps();
+}
+function installSteps() {
+  if (state.installPrompt) return `<button class="primary big" data-ig="prompt">${ADD_IC}<span>Installér appen</span></button>
+    <p class="muted small center">Telefonen spørger, om du vil tilføje appen. Tryk «Installér».</p>`;
+  const step = (n, html) => `<li><span class="ig-n">${n}</span><div>${html}</div></li>`;
+  if (isIOS()) {
+    const other = /CriOS|FxiOS|EdgiOS/.test(navigator.userAgent);
+    const link = state.entryLink && /[?&](pakke|kunde|entr|opgave|afhent)=/.test(state.entryLink);
+    return `<ol class="ig-steps">
+      ${step(1, `Tryk på <span class="ig-key">${SHARE_IC}Del</span> ${other ? "i adresselinjen øverst" : "nederst i Safari (på iPad øverst)"}.`)}
+      ${step(2, `Rul ned, og vælg <span class="ig-key">${ADD_IC}Føj til hjemmeskærm</span>.`)}
+      ${step(3, `Tryk <b>Tilføj</b> øverst til højre. Åbn derefter SkovPlan Felt fra hjemmeskærmen.`)}
+    </ol>
+    ${link ? `<div class="ig-link"><b>Du kom ind via et link.</b> Appen på hjemmeskærmen kender ikke linket, så kopiér det nu, og tryk
+      «Indsæt link fra SkovPlan», når du åbner appen.<button class="big" data-ig="copy">Kopiér linket</button></div>` : ""}`;
+  }
+  return `<ol class="ig-steps">
+    ${step(1, isMobile() ? `Tryk på browserens menu <span class="ig-key">${DOTS_IC}</span> øverst til højre.` : `Klik på installér-ikonet i adresselinjen eller i browserens menu.`)}
+    ${step(2, `Vælg <span class="ig-key">${ADD_IC}Installér app</span> eller «Føj til startskærm».`)}
+    ${step(3, `Bekræft. Åbn derefter SkovPlan Felt fra startskærmen.`)}
+  </ol>`;
+}
+function installGuide(force) {
+  if (isStandalone()) { safeLS("installeret", "1"); return; }
+  if (!force) {
+    if (safeLS("installeret") === "1" || !isMobile()) return;
+    if (safeLS("installGuideVist") === "1") return installBar();
+  }
+  safeLS("installGuideVist", "1"); $("#installBar")?.remove(); $("#installGuide")?.remove();
+  document.body.insertAdjacentHTML("beforeend", `<div id="installGuide" class="guide" role="dialog" aria-modal="true" aria-labelledby="igTitle">
+    <div class="ig-card">
+      <img src="icon-192.png" alt="" class="ig-icon">
+      <h2 id="igTitle">Gem SkovPlan Felt på telefonen</h2>
+      <p class="ig-lead">Så ligger den som en app på hjemmeskærmen, åbner i fuld skærm og virker uden net ude i skoven.</p>
+      <div class="ig-body">${installSteps()}</div>
+      <button class="big ghost" data-ig="later">Ikke nu</button>
+      <p class="muted small center">Du kan altid finde guiden i menuen.</p>
+    </div></div>`);
+  $("#installGuide").onclick = async e => {
+    const b = e.target.closest("[data-ig]"); if (!b) return;
+    if (b.dataset.ig === "later") return $("#installGuide").remove();
+    if (b.dataset.ig === "copy") {
+      try { await navigator.clipboard.writeText(state.entryLink); b.textContent = "✓ Linket er kopieret"; }
+      catch (err) { prompt("Kopiér linket:", state.entryLink); }
+      return;
+    }
+    if (b.dataset.ig === "prompt" && state.installPrompt) {
+      const pr = state.installPrompt; pr.prompt();
+      const r = await pr.userChoice; state.installPrompt = null;
+      if (r.outcome === "accepted") markInstalled(); else { $("#installGuide .ig-body").innerHTML = installSteps(); }
+    }
+  };
+}
+function installBar() {
+  if (safeLS("installBarLuk") === "1" || $("#installBar")) return;
+  document.body.insertAdjacentHTML("beforeend", `<div id="installBar"><span>${ADD_IC}</span><button class="grow" data-ib="show">Gem appen på hjemmeskærmen</button><button data-ib="x" aria-label="Luk">✕</button></div>`);
+  $("#installBar").onclick = e => { const b = e.target.closest("[data-ib]"); if (!b) return;
+    if (b.dataset.ib === "x") { safeLS("installBarLuk", "1"); $("#installBar").remove(); } else installGuide(true); };
+}
+
 /* ------------------------------------------------------------------ start */
 /* ------------------------------------------------------------------ skovkortet opdaterer sig selv
    SkovPlan lægger en lille skovkort.zip og version.json i ejendommens mappe online, når planen ændres.
@@ -3625,6 +3704,7 @@ async function updateMap(d, base, version) {
   showWelcome();
   drawRegMarkers(); startGps(); loadTasks().then(syncTasks);
   const params = new URLSearchParams(location.search);
+  if (location.search) state.entryLink = location.href;   // til installationsguiden på iPhone (hjemmeskærm-appen har sit eget lager)
   const linked = packageUrlFrom(params.get("pakke") ? location.href : "");
   let customer = null; try { customer = params.get("kunde") ? new URL(params.get("kunde")).href : null; } catch (e) { /* ugyldigt */ }
   if (linked || customer) history.replaceState(null, "", location.pathname);
@@ -3632,6 +3712,7 @@ async function updateMap(d, base, version) {
   const dbArg = dbParam(params);
   if (!role() && ((params.get("opgave") || params.get("afhent") || params.get("entr")) && dbArg)) safeLS("rolle", "entreprenor");   // CLAUDE-1280: kom via et opgavelink
   askRole();
+  installGuide();
   if (params.get("entr") && dbArg) openCrew(params.get("entr"), dbArg);   // CLAUDE-1795: entreprenørpakke
   else if (params.get("opgave") && dbArg) openJob(params.get("opgave"), dbArg);   // CLAUDE-1211
   else if (params.get("afhent") && dbArg) openPickup(params.get("afhent"), dbArg, hashPile());   // CLAUDE-1276
@@ -3640,10 +3721,7 @@ async function updateMap(d, base, version) {
   setTimeout(checkMapUpdates, 4000); setInterval(checkMapUpdates, 10 * 60 * 1000); setInterval(syncTasks, 2 * 60 * 1000);
   window.addEventListener("online", () => { checkMapUpdates(); syncTasks(); });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { checkMapUpdates(); syncTasks(); } });
-  // Installér som app (Android/Chrome viser sin egen dialog; iPhone: Del › Føj til hjemmeskærm)
-  const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
-  window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); state.installPrompt = e; $("#btnInstall")?.classList.remove("hidden"); });
-  if (!standalone && /iPhone|iPad/.test(navigator.userAgent)) $("#btnInstall")?.classList.remove("hidden");
+  refreshMenuInfo();
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
     const had = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.register("sw.js").then(r => r.update()).catch(e => console.warn("SW", e));
