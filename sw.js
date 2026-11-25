@@ -1,9 +1,9 @@
 /* SkovPlan Felt – service worker: appen virker uden net, og kortfliser gemmes, når de er set. */
-const APP = "skovplan-felt-v47";   // tryk på ejendomsnavnet for at skifte ejendom
+const APP = "skovplan-felt-v48";   // del ejendommen med QR-kode
 const TILES = "skovplan-felt-tiles";
 const SHELL = ["./", "index.html", "app.js", "style.css", "manifest.webmanifest", "favicon.png", "apple-touch-icon.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png",
   "logo.png", "logo-symbol.png",
-  "lib/leaflet.js", "lib/leaflet.css", "lib/sql-wasm.js", "lib/sql-wasm.wasm", "lib/jszip.min.js",
+  "lib/leaflet.js", "lib/leaflet.css", "lib/sql-wasm.js", "lib/sql-wasm.wasm", "lib/jszip.min.js", "lib/qrcode.js",
   "lib/images/marker-icon.png", "lib/images/marker-shadow.png", "lib/images/layers.png"];
 const MAX_TILES = 4000;
 

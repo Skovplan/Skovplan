@@ -526,3 +526,6 @@ button#title { border: 0; font: inherit; min-height: 46px; cursor: pointer; }
 #title .tt { flex: 1; display: flex; flex-direction: column; }
 #title .chev { color: var(--muted); flex: none; }
 body.jobmode #title { pointer-events: none; } body.jobmode #title .chev { display: none; }
+/* del ejendommen: QR-kode */
+.qrbox { background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 14px; margin: 10px auto 12px; width: min(280px, 80vw); }
+.qrbox svg { display: block; width: 100%; height: auto; }
