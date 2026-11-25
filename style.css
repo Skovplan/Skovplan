@@ -233,6 +233,7 @@ ul.tasks li.task.done b { text-decoration: line-through; color: var(--muted); }
 .tick { flex: 0 0 34px; width: 34px; min-height: 34px; height: 34px; padding: 0; border-radius: 8px; border: 2px solid #1f5f3a; color: #1f5f3a; font-weight: 700; }
 li.done .tick { background: #1f5f3a; color: #fff; }
 .late { color: #b3261e; font-weight: 600; }
+.inplan { color: #1f6b3f; font-weight: 600; }
 .task-pin { width: 26px; height: 26px; border-radius: 50% 50% 50% 0; background: #fff; border: 2px solid #1a73e8; color: #1a73e8; font-size: 15px;
   line-height: 22px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
 .task-pin.mine { background: #e8710a; border-color: #fff; color: #fff; }
