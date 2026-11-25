@@ -3063,6 +3063,7 @@ function refreshMenuInfo() {
   $("#btnMenu").classList.toggle("pending", c ? ns > 0 : ne > 0);
   $("#btnMenu").title = c ? (ns ? `${ns} venter på at blive sendt` : "Alt er sendt til SkovPlan") : (ne ? `${ne} ikke eksporteret` : "");
   $("#btnUpdatePkg")?.classList.toggle("hidden", !onlinePackageUrl());
+  $("#btnShareProp")?.classList.toggle("hidden", !state.data || isContractor());
   propertyList().then(l => $("#btnChoose")?.classList.toggle("hidden", !(l.length > 1 || safeLS("kundeUrl"))));
 }
 /* ------------------------------------------------------------------ CLAUDE-3870: «Opret jagt»
@@ -3167,6 +3168,7 @@ const ACTIONS = {
   huntOpen: el => window.open(el.dataset.url, "_blank", "noopener"),
   huntCopy: async el => { try { await navigator.clipboard.writeText(el.dataset.url); toast("Linket er kopieret"); } catch (e) { prompt("Kopiér linket:", el.dataset.url); } },
   chooseProperty: () => propertySheet(),
+  shareProperty: () => shareProperty(),
   updatePackage: () => { const u = onlinePackageUrl(); u ? downloadPackage(u) : askPackageLink(); },
   install: () => installGuide(true),
   photo: () => $("#photoInput").click(),
@@ -3251,7 +3253,7 @@ async function downloadPackage(url) {
       parts.push(value); got += value.length;
       toast(`Henter feltpakken … ${total ? Math.round(got / total * 100) + " %" : Math.round(got / 1048576) + " MB"}`, 60000);
     }
-    safeLS("pakkeUrl", url);
+    safeLS("pakkeUrl", url); state.pendingPkgUrl = url;   // husk linket på ejendommen (til «Del ejendommen»)
     await openFiles([new File(parts, "feltpakke.zip", { type: "application/zip" })]);
   } catch (err) { console.error(err); toast("Feltpakken kunne ikke hentes: " + err.message, 7000); }
 }
@@ -3275,6 +3277,7 @@ function askPackageLink() {
 async function loadGpkg(g, f, meta) {
   const data = readGpkg(g, f);
   if (meta) { const { _extra, ...pakke } = meta; data.pakke = pakke; if (_extra) data.extra = _extra; }
+  if (state.pendingPkgUrl) { data.pakke = { ...(data.pakke || {}), kildeUrl: state.pendingPkgUrl }; state.pendingPkgUrl = null; }
   data.id = propId(data);
   await db.put("kv", data, "skovkort:" + data.id);
   await activateProperty(data, await db.get("kv", "ortofoto:" + data.id));
@@ -3555,6 +3558,7 @@ async function propertySheet() {
     ${remote.length ? `<p class="muted">${esc(customer.kunde || "Flere ejendomme")} – kan hentes:</p><ul class="list">${remote.map((e, i) => `<li><div class="grow"><b>${esc(e.navn)}</b></div>
       <button class="primary" data-get="${i}">Hent</button></li>`).join("")}</ul>` : ""}
     ${url && !customer ? `<p class="muted">Kundens øvrige ejendomme vises, når telefonen har net.</p>` : ""}
+    ${state.data && !isContractor() ? `<button class="big primary" data-act="shareProperty">Del ${esc(state.data.name)} med QR-kode</button>` : ""}
     <button class="big" data-act="packageLink">Indsæt link fra SkovPlan</button>
     <button class="big" data-act="openGpkg">Vælg feltpakke-fil</button>`);
   sheet.querySelectorAll("[data-open]").forEach(b => b.onclick = () => switchProperty(b.dataset.open));
@@ -3640,6 +3644,33 @@ function installBar() {
   document.body.insertAdjacentHTML("beforeend", `<div id="installBar"><span>${ADD_IC}</span><button class="grow" data-ib="show">Gem appen på hjemmeskærmen</button><button data-ib="x" aria-label="Luk">✕</button></div>`);
   $("#installBar").onclick = e => { const b = e.target.closest("[data-ib]"); if (!b) return;
     if (b.dataset.ib === "x") { safeLS("installBarLuk", "1"); $("#installBar").remove(); } else installGuide(true); };
+}
+
+/* ------------------------------------------------------------------ Del ejendommen med QR-kode
+   Linket er det samme, som SkovPlan laver («…/?pakke=<feltpakke.zip>»): den anden scanner koden med kameraet,
+   appen åbner og henter skovkortet. Kræver at ejendommen ligger online (hentet via link eller online-synk). */
+function propertyLink() {
+  const pk = state.data ? (onlinePackageUrlFor(state.data) || state.data.pakke?.kildeUrl || null) : null;
+  return pk ? location.origin + location.pathname + "?pakke=" + encodeURIComponent(pk) : null;
+}
+function shareProperty() {
+  if (!state.data) return toast("Hent en ejendom først");
+  const link = propertyLink();
+  if (!link) return openSheet(`<div class="head"><h3>Del ${esc(state.data.name)}</h3><button class="close">Luk</button></div>
+    <p>Ejendommen er åbnet fra en fil, så der er ikke noget link at dele.</p>
+    <p class="muted">Slå online-synk til for ejendommen i SkovPlan, og send feltpakken igen. Så kan den deles herfra med en QR-kode.</p>`);
+  let svg = "";
+  try { const qr = qrcode(0, "M"); qr.addData(link); qr.make(); svg = qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true }); }
+  catch (e) { console.warn("QR", e); }
+  openSheet(`<div class="head"><h3>Del ${esc(state.data.name)}</h3><button class="close">Luk</button></div>
+    <p class="muted" style="margin:0 0 4px">Den anden scanner koden med telefonens kamera. Så åbner SkovPlan Felt og henter skovkortet.</p>
+    <div class="qrbox">${svg || '<p class="muted">QR-koden kunne ikke laves – brug linket.</p>'}</div>
+    <div class="row2"><button class="primary" data-sh="share">Del linket</button><button data-sh="copy">Kopiér linket</button></div>
+    <p class="muted small" style="margin-top:10px">Alle med koden kan se skovkortet${syncCfg() ? " og sende registreringer til SkovPlan" : ""}. Del den kun med folk, der arbejder i skoven.</p>`);
+  sheet.querySelectorAll("[data-sh]").forEach(b => b.onclick = async () => {
+    if (b.dataset.sh === "share" && navigator.share) { try { await navigator.share({ title: state.data.name, text: `Skovkort: ${state.data.name}`, url: link }); } catch (e) { /* annulleret */ } return; }
+    try { await navigator.clipboard.writeText(link); toast("Linket er kopieret"); } catch (e) { prompt("Kopiér linket:", link); }
+  });
 }
 
 /* ------------------------------------------------------------------ start */
